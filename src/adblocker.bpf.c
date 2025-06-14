@@ -34,9 +34,6 @@ struct {
 #define STAT_TOTAL 0    // Index 0 stores the total packet count
 #define STAT_BLOCKED 1  // Index 1 stores the blocked packet count
 
-// We don't need to initialize the map from within the eBPF program
-// The userspace program will handle this completely
-
 // Helper function to increment statistics counters
 // Uses atomic operations to safely update counters from multiple CPUs
 static __always_inline void update_stats(__u32 stat_type) {
@@ -81,8 +78,7 @@ int xdp_blocker(struct xdp_md *ctx) {
     __u8 *blocked;
     
     // Check if the destination IP address is in our blacklist
-    __u32 dest_ip = ip->daddr;
-    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &dest_ip);
+    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &ip->daddr);
     if (blocked) {
         // IP is blacklisted, update our blocked packet counter
         update_stats(STAT_BLOCKED);
@@ -90,8 +86,7 @@ int xdp_blocker(struct xdp_md *ctx) {
     }
     
     // Check if the source IP address is in our blacklist
-    __u32 src_ip = ip->saddr;
-    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &src_ip);
+    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &ip->saddr);
     if (blocked) {
         // IP is blacklisted, update our blocked packet counter
         update_stats(STAT_BLOCKED);

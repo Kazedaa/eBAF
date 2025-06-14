@@ -1,3 +1,5 @@
 .vscode/
 bin/
 obj/
+src/ip_blacklist.h
+src/ip_blacklist.c

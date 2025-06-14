@@ -29,7 +29,7 @@ OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 # Default blacklist file (can be overridden with BLACKLIST=path/to/file make option)
 BLACKLIST ?= spotify-stable
 
-all: directories $(TARGET)
+all: directories $(TARGET) wrapper
 
 directories:
 	mkdir -p $(OBJ_DIR)
@@ -53,56 +53,92 @@ clean:
 	rm -f $(SRC_DIR)/ip_blacklist.h $(SRC_DIR)/ip_blacklist.c
 
 install: all
+	sudo mkdir -p /usr/local/bin
+	sudo mkdir -p /usr/local/share/ebaf
 	sudo cp $(TARGET) /usr/local/bin/
-	sudo cp $(BIN_DIR)/*.bpf.o /usr/local/bin/
+	sudo cp $(BIN_DIR)/*.bpf.o /usr/local/share/ebaf/
+	sudo cp $(BIN_DIR)/run-adblocker.sh /usr/local/bin/ebaf
+	@echo "Installed to /usr/local/bin/ebaf"
+	@echo "Run with: sudo ebaf <interface>"
+
+# Add uninstall target to remove all installed components
+uninstall:
+	@echo "Uninstalling eBAF..."
+	@if [ -f /usr/local/bin/adblocker ]; then \
+		sudo rm -f /usr/local/bin/adblocker; \
+		echo "Removed /usr/local/bin/adblocker"; \
+	fi
+	@if [ -f /usr/local/bin/ebaf ]; then \
+		sudo rm -f /usr/local/bin/ebaf; \
+		echo "Removed /usr/local/bin/ebaf"; \
+	fi
+	@if [ -d /usr/local/share/ebaf ]; then \
+		sudo rm -rf /usr/local/share/ebaf; \
+		echo "Removed /usr/local/share/ebaf"; \
+	fi
+	@echo "eBAF has been uninstalled successfully."
 
 find-interface:
 	@ip -o link show | grep -v "lo:" | cut -d':' -f2 | tr -d ' ' | sed 's/^/  /'
-	@echo "Use the interface name as parameter, e.g.: sudo ./bin/adblocker wlan0"
+	@echo "Use the interface name as parameter, e.g.: sudo ./bin/run-adblocker.sh wlan0"
 
-test: all
+test-blacklist: directories
 	@echo "Creating test blacklist..."
-	@echo "1.1.1.1" > /tmp/test-ip-blacklist.txt
+	@echo "# Test blacklist" > /tmp/test-ip-blacklist.txt
+	@echo "1.1.1.1" >> /tmp/test-ip-blacklist.txt
+	@echo "8.8.8.8" >> /tmp/test-ip-blacklist.txt
 	@echo "google.com" >> /tmp/test-ip-blacklist.txt
-	@echo "facebook.com" >> /tmp/test-ip-blacklist.txt
-	@echo "Run the test with: sudo ./bin/adblocker <interface>"
+	@make BLACKLIST=/tmp/test-ip-blacklist.txt
+	@echo "Built with test blacklist"
 
 # Create a wrapper script that increases RLIMIT_MEMLOCK before running
 wrapper:
 	@echo '#!/bin/bash' > $(BIN_DIR)/run-adblocker.sh
+	@echo '# eBPF Ad Blocker Firewall (eBAF)' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '' >> $(BIN_DIR)/run-adblocker.sh
 	@echo 'if [ "$${EUID}" -ne 0 ]; then' >> $(BIN_DIR)/run-adblocker.sh
 	@echo '  echo "This program requires root privileges. Please run with sudo."' >> $(BIN_DIR)/run-adblocker.sh
 	@echo '  exit 1' >> $(BIN_DIR)/run-adblocker.sh
 	@echo 'fi' >> $(BIN_DIR)/run-adblocker.sh
 	@echo '' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '# Increase memory lock limit' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '# Increase memory lock limit for eBPF maps' >> $(BIN_DIR)/run-adblocker.sh
 	@echo 'ulimit -l unlimited' >> $(BIN_DIR)/run-adblocker.sh
 	@echo '' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '# Find the adblocker binary' >> $(BIN_DIR)/run-adblocker.sh
+	@echo 'SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> $(BIN_DIR)/run-adblocker.sh
+	@echo 'if [ -f "$${SCRIPT_DIR}/adblocker" ]; then' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '  ADBLOCKER="$${SCRIPT_DIR}/adblocker"' >> $(BIN_DIR)/run-adblocker.sh
+	@echo 'elif [ -f "/usr/local/bin/adblocker" ]; then' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '  ADBLOCKER="/usr/local/bin/adblocker"' >> $(BIN_DIR)/run-adblocker.sh
+	@echo 'else' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '  echo "Error: Could not find adblocker binary"' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '  exit 1' >> $(BIN_DIR)/run-adblocker.sh
+	@echo 'fi' >> $(BIN_DIR)/run-adblocker.sh
+	@echo '' >> $(BIN_DIR)/run-adblocker.sh
 	@echo '# Execute the adblocker with all passed arguments' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'exec $(BIN_DIR)/adblocker "$$@"' >> $(BIN_DIR)/run-adblocker.sh
+	@echo 'exec "$${ADBLOCKER}" "$$@"' >> $(BIN_DIR)/run-adblocker.sh
 	@chmod +x $(BIN_DIR)/run-adblocker.sh
-	@echo "Created wrapper script. Run with: sudo $(BIN_DIR)/run-adblocker.sh <interface>"
 
 # Add a help target to explain usage
 help:
-	@echo "Build options:"
-	@echo "  make              - Build with default blacklist (spotify-stable)"
-	@echo "  make BLACKLIST=file.txt - Build with custom blacklist file"
-	@echo "  make wrapper      - Create a wrapper script that handles memory limits"
+	@echo "eBPF Ad Blocker Firewall (eBAF)"
 	@echo ""
-	@echo "Usage examples:"
-	@echo "  make BLACKLIST=my-custom-blacklist.txt"
-	@echo "  make clean"
-	@echo "  make install"
+	@echo "Build options:"
+	@echo "  make                       - Build with default blacklist (spotify-stable)"
+	@echo "  make BLACKLIST=file.txt    - Build with custom blacklist file"
+	@echo "  make test-blacklist        - Build with a small test blacklist"
+	@echo ""
+	@echo "Usage commands:"
+	@echo "  make install               - Install to system"
+	@echo "  make uninstall             - Remove from system"
+	@echo "  make clean                 - Clean build files"
+	@echo "  make find-interface        - Show available network interfaces"
+	@echo "  make help                  - Show this help message"
 	@echo ""
 	@echo "After building, run with:"
-	@echo "  sudo ./bin/adblocker <interface>     - Direct execution"
-	@echo "  sudo ./bin/run-adblocker.sh <interface> - Using wrapper (recommended)"
+	@echo "  sudo ./bin/run-adblocker.sh <interface>"
 	@echo ""
-	@echo "To see available interfaces:"
-	@echo "  make find-interface"
+	@echo "After installing, run with:"
+	@echo "  sudo ebaf <interface>"
 
-# Ensure wrapper is created by default
-all: wrapper
-
-.PHONY: all directories clean install find-interface test help wrapper
+.PHONY: all directories clean install uninstall find-interface test-blacklist wrapper help

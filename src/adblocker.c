@@ -20,7 +20,7 @@
 #include <bpf/bpf.h>            // Core eBPF userspace functions
 
 #include "adblocker.h"          // Our header with constants
-#include "ip_blacklist.h"
+#include "ip_blacklist.h"       // Pre-resolved IP blacklist
 
 // Global variables to maintain program state
 static int ifindex;             // Network interface index
@@ -42,17 +42,11 @@ static void print_ips(void) {
     __u8 value;
     int count = 0;
     
-    printf("IPs currently in the blacklist map:\n");
-    
     // Start iterating through the map entries
     if (bpf_map_get_next_key(blacklist_ip_map_fd, NULL, &key) == 0) {
         do {
             // Get the value for the current key
             if (bpf_map_lookup_elem(blacklist_ip_map_fd, &key, &value) == 0) {
-                // Convert IP from numeric to human-readable format
-                struct in_addr addr;
-                addr.s_addr = key;
-                printf("  %s (hex: 0x%08X)\n", inet_ntoa(addr), key);
                 count++;
             }
         // Move to next key until we've gone through all entries
@@ -157,32 +151,6 @@ static void print_stats(void) {
     printf("Total packets: %llu, Blocked packets: %llu\n", total, blocked);
 }
 
-// First, add verbose printing for the IPs we're loading
-static void load_ip_blacklist(void) {
-    int count = 0;
-    __u8 value = 1;
-    
-    printf("Loading %d IPs into blacklist map...\n", BLACKLIST_SIZE);
-    
-    // Update the map directly from userspace
-    for (int i = 0; i < BLACKLIST_SIZE; i++) {
-        __u32 ip = htonl(blacklisted_ips[i]);  // Convert to network byte order
-        
-        // Print in human-readable format for debugging
-        struct in_addr addr;
-        addr.s_addr = ip;
-        printf("  Loading IP: %s (hex: 0x%08X)\n", inet_ntoa(addr), ip);
-        
-        if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
-            count++;
-        } else {
-            printf("  Failed to load IP: %s (errno: %d)\n", inet_ntoa(addr), errno);
-        }
-    }
-    
-    printf("Successfully loaded %d IPs into blacklist map\n", count);
-}
-
 // Function to increase RLIMIT_MEMLOCK to allow eBPF maps to be created
 static void increase_memlock_limit(void) {
     struct rlimit rlim = {
@@ -193,8 +161,23 @@ static void increase_memlock_limit(void) {
     if (setrlimit(RLIMIT_MEMLOCK, &rlim)) {
         fprintf(stderr, "Warning: Failed to increase RLIMIT_MEMLOCK limit: %s\n", 
                 strerror(errno));
-        fprintf(stderr, "You may need to run with sudo or increase the limit manually\n");
-        fprintf(stderr, "Try running: 'sudo ./bin/run-adblocker.sh <interface>'\n");
+        fprintf(stderr, "You may need to run with sudo or use the wrapper script\n");
+    }
+}
+
+// Function to load IP blacklist into the map from C directly
+static void load_ip_blacklist(void) {
+    int count = 0;
+    __u8 value = 1;
+    
+    printf("Loading IP blacklist into filter...\n");
+    
+    // Update the map directly from userspace
+    for (int i = 0; i < BLACKLIST_SIZE; i++) {
+        __u32 ip = htonl(blacklisted_ips[i]);  // Convert to network byte order
+        if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
+            count++;
+        }
     }
 }
 
@@ -229,7 +212,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    printf("Loading BPF object: %s\n", bpf_obj_path);
+    printf("Loading BPF program...\n");
     
     // Open the eBPF object file
     obj = bpf_object__open_file(bpf_obj_path, NULL);
@@ -240,7 +223,7 @@ int main(int argc, char **argv) {
     
     // Load the eBPF program into the kernel
     if (bpf_object__load(obj)) {
-        fprintf(stderr, "Failed to load BPF object\n");
+        fprintf(stderr, "Failed to load BPF program\n");
         return 1;
     }
     
@@ -284,14 +267,14 @@ int main(int argc, char **argv) {
     // Define different XDP attachment modes to try
     // These modes affect performance and compatibility
     int xdp_flags[] = {
-        XDP_FLAGS_SKB_MODE,    // Generic mode (most compatible)
         XDP_FLAGS_DRV_MODE,    // Native mode (fastest)
+        XDP_FLAGS_SKB_MODE,    // Generic mode (most compatible)
         0                      // Default mode
     };
     
     const char *mode_names[] = {
-        "generic (SKB)",
         "native (DRV)",
+        "generic (SKB)",
         "default"
     };
     
@@ -321,7 +304,7 @@ int main(int argc, char **argv) {
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
     
-    printf("\nAdblocker is running. Press Ctrl+C to stop.\n");
+    printf("\nAd blocker is running. Press Ctrl+C to stop.\n");
     
     // Main loop: print statistics every second
     while (1) {
