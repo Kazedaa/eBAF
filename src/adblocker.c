@@ -34,6 +34,7 @@ static time_t start_time;       // When the program started
 
 static pthread_t resolver_thread;
 static volatile bool running = true;
+static int total_blocked_ips = 0;  // Keep track of total IPs for change detection
 
 // Function to print all blocked IP addresses currently in the map
 static void print_ips(void) {
@@ -257,26 +258,33 @@ static void *resolver_thread_func(void *data) {
         // Resolve all domains and update the blacklist map
         int resolved = domain_store_resolve_all(*map_fd);
         
-        time_t now = time(NULL);
-        struct tm *tm_info = localtime(&now);
-        char time_str[26];
-        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
-        
-        // Print stats about the current blacklist map size
+        // Count current IPs in the map
         __u32 key, next_key;
         __u8 value;
-        int ip_count = 0;
+        int current_ip_count = 0;
         
         if (bpf_map_get_next_key(*map_fd, NULL, &key) == 0) {
             do {
                 if (bpf_map_lookup_elem(*map_fd, &key, &value) == 0) {
-                    ip_count++;
+                    current_ip_count++;
                 }
             } while (bpf_map_get_next_key(*map_fd, &key, &next_key) == 0 && (key = next_key));
         }
         
-        printf("[%s] Resolved %d domains, total blocked IPs: %d\n", 
-               time_str, resolved, ip_count);
+        // Only log if there are new IPs found
+        if (current_ip_count > total_blocked_ips) {
+            time_t now = time(NULL);
+            struct tm *tm_info = localtime(&now);
+            char time_str[26];
+            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+            
+            int new_ips = current_ip_count - total_blocked_ips;
+            printf("[%s] Found %d new IP addresses, total blocked IPs: %d\n", 
+                   time_str, new_ips, current_ip_count);
+                   
+            // Update our stored count
+            total_blocked_ips = current_ip_count;
+        }
         
         // Sleep for RESOLUTION_INTERVAL_SEC seconds
         for (int i = 0; i < RESOLUTION_INTERVAL_SEC && running; i++) {
