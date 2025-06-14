@@ -3,9 +3,18 @@
 #ifndef ADBLOCKER_H  // Include guard to prevent double inclusion
 #define ADBLOCKER_H
 
-// Stats indices - these must match the indices used in the eBPF code
+// Statistics map indices
 #define STAT_TOTAL 0    // Index for counting total packets
 #define STAT_BLOCKED 1  // Index for counting blocked packets
+
+// Background resolution settings
+#define DOMAIN_MAX_SIZE 256
+#define MAX_DOMAINS 10000
+#define RESOLUTION_INTERVAL_SEC 60  // Re-resolve every 15 minutes
+
+// Domain resolution status
+#define RESOLUTION_SUCCESS 0
+#define RESOLUTION_FAILED 1
 
 // Additional statistics counters (not currently used)
 #define STAT_DNS_BLOCKED 1

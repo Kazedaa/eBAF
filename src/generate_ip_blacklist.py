@@ -16,7 +16,7 @@ def ip_to_int(ip_str):
         return None
 
 def process_ip_or_domain(line):
-    """Process a line containing an IP or domain name"""
+    """Process a line containing an IP or domain name, resolving all its IPs"""
     line = line.strip()
     if not line or line.startswith('#'):
         return None
@@ -24,12 +24,23 @@ def process_ip_or_domain(line):
     # First, try treating it as an IP address
     ip_int = ip_to_int(line)
     if ip_int:
-        return ip_int, line
+        return [(ip_int, line)]  # Return as a list for consistency
 
-    # If not an IP, try resolving as a domain
+    # If not an IP, try resolving as a domain with ALL its IPs
     try:
-        ip_address = socket.gethostbyname(line)
-        return ip_to_int(ip_address), f"{line} ({ip_address})"
+        # Use gethostbyname_ex to get ALL IPs for the domain
+        _, _, ip_addresses = socket.gethostbyname_ex(line)
+        results = []
+        for ip in ip_addresses:
+            ip_int = ip_to_int(ip)
+            if ip_int:
+                results.append((ip_int, f"{line} ({ip})"))
+        
+        if results:
+            return results
+        else:
+            sys.stderr.write(f"Warning: Could not resolve domain {line}\n")
+            return None
     except socket.gaierror:
         sys.stderr.write(f"Warning: Could not resolve domain {line}\n")
         return None
@@ -83,9 +94,12 @@ def main():
             if not line or line.startswith('#'):
                 continue
                 
-            result = process_ip_or_domain(line)
-            if result:
-                resolved_ips.append(result)
+            results = process_ip_or_domain(line)
+            if results:
+                if isinstance(results, list):
+                    resolved_ips.extend(results)
+                else:
+                    resolved_ips.append(results)
             else:
                 skipped += 1
 

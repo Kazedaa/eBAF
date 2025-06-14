@@ -7,7 +7,7 @@ OBJ_DIR = obj
 BIN_DIR = bin
 
 TARGET = $(BIN_DIR)/adblocker
-SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/ip_blacklist.c
+SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/domain_store.c
 
 CFLAGS = -Wall -O2
 BPF_CFLAGS = -O2 -g -target bpf -I$(LIBBPF_HEADERS) -c
@@ -140,6 +140,7 @@ help:
 	@echo "  make                       - Build with default blacklist (spotify-stable)"
 	@echo "  make BLACKLIST=file.txt    - Build with custom blacklist file"
 	@echo "  make test-blacklist        - Build with a small test blacklist"
+	@echo "  make dynamic-blacklist      - Build with dynamic domain resolution"
 	@echo ""
 	@echo "Usage commands:"
 	@echo "  make install               - Install to system"
@@ -156,4 +157,4 @@ help:
 	@echo "  sudo ebaf <interface>"
 	@echo "  sudo ebaf-check            - Run health check"
 
-.PHONY: all directories clean install uninstall find-interface test-blacklist wrapper help health-check
+.PHONY: all directories clean install uninstall find-interface test-blacklist wrapper help health-check dynamic-blacklist

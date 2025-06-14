@@ -12,7 +12,7 @@ BOLD='\033[1m'
 RESET='\033[0m'
 
 # Configuration
-MAX_TEST_IPS=30  # Maximum number of IPs to test (to avoid excessive testing)
+MAX_TEST_IPS=5  # Maximum number of IPs to test (to avoid excessive testing)
 TEST_INTERFACE=""
 ADBLOCKER_PID=""
 TEST_DURATION=10

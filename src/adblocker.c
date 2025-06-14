@@ -15,12 +15,15 @@
 #include <libgen.h>             // Pathname manipulation functions
 #include <sys/resource.h>       // For setrlimit
 #include <time.h>               // For time tracking
+#include <pthread.h>
+#include <stdbool.h>
 
 #include <bpf/libbpf.h>         // libbpf functions for loading eBPF programs
 #include <bpf/bpf.h>            // Core eBPF userspace functions
 
 #include "adblocker.h"          // Our header with constants
 #include "ip_blacklist.h"       // Pre-resolved IP blacklist
+#include "domain_store.h"
 
 // Global variables to maintain program state
 static int ifindex;             // Network interface index
@@ -28,6 +31,9 @@ static struct bpf_object *obj;  // Our loaded eBPF object
 static int blacklist_ip_map_fd; // File descriptor for the IP blacklist map
 static int stats_map_fd;        // File descriptor for the statistics map
 static time_t start_time;       // When the program started
+
+static pthread_t resolver_thread;
+static volatile bool running = true;
 
 // Function to print all blocked IP addresses currently in the map
 static void print_ips(void) {
@@ -76,6 +82,8 @@ static void get_stats(__u64 *total, __u64 *blocked) {
 
 // Function to clean up when the program exits
 static void cleanup(int sig) {
+    (void)sig;  // Mark parameter as used to avoid warning
+    
     // Get final statistics
     __u64 total, blocked;
     get_stats(&total, &blocked);
@@ -84,6 +92,9 @@ static void cleanup(int sig) {
     time_t end_time = time(NULL);
     double uptime = difftime(end_time, start_time);
     
+    // Signal resolver thread to stop
+    running = false;
+    
     printf("\n--- eBAF Statistics ---\n");
     printf("Uptime: %.1f seconds\n", uptime);
     printf("Total packets processed: %llu\n", total);
@@ -91,6 +102,13 @@ static void cleanup(int sig) {
     printf("Blocking rate: %.2f%%\n", (total > 0) ? ((double)blocked / total * 100.0) : 0);
     
     printf("Removing XDP program from interface %d\n", ifindex);
+    
+    // Wait for resolver thread to terminate
+    pthread_join(resolver_thread, NULL);
+    
+    // Clean up domain store
+    domain_store_cleanup();
+    
     // Detach our eBPF program from the network interface
     bpf_xdp_detach(ifindex, 0, NULL);
     exit(0);
@@ -194,6 +212,80 @@ static void load_ip_blacklist(void) {
             count++;
         }
     }
+}
+
+// Add this function to initialize the original blacklist and domain store
+static void process_blacklist_file(const char *filename) {
+    FILE *fp;
+    char line[DOMAIN_MAX_SIZE];
+    int count = 0;
+    
+    // Initialize domain store
+    domain_store_init();
+    
+    fp = fopen(filename, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Warning: Could not open blacklist file: %s\n", filename);
+        return;
+    }
+    
+    while (fgets(line, sizeof(line), fp)) {
+        // Remove trailing newline
+        line[strcspn(line, "\r\n")] = 0;
+        
+        // Skip comments and empty lines
+        if (line[0] == '\0' || line[0] == '#')
+            continue;
+        
+        // Add to domain store for periodic resolution
+        if (domain_store_add(line) == 0) {
+            count++;
+        }
+    }
+    
+    fclose(fp);
+    printf("Added %d domains to periodic resolution list\n", count);
+}
+
+// Modify the resolver thread function
+static void *resolver_thread_func(void *data) {
+    int *map_fd = (int *)data;
+    
+    printf("Background resolver thread started\n");
+    
+    while (running) {
+        // Resolve all domains and update the blacklist map
+        int resolved = domain_store_resolve_all(*map_fd);
+        
+        time_t now = time(NULL);
+        struct tm *tm_info = localtime(&now);
+        char time_str[26];
+        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+        
+        // Print stats about the current blacklist map size
+        __u32 key, next_key;
+        __u8 value;
+        int ip_count = 0;
+        
+        if (bpf_map_get_next_key(*map_fd, NULL, &key) == 0) {
+            do {
+                if (bpf_map_lookup_elem(*map_fd, &key, &value) == 0) {
+                    ip_count++;
+                }
+            } while (bpf_map_get_next_key(*map_fd, &key, &next_key) == 0 && (key = next_key));
+        }
+        
+        printf("[%s] Resolved %d domains, total blocked IPs: %d\n", 
+               time_str, resolved, ip_count);
+        
+        // Sleep for RESOLUTION_INTERVAL_SEC seconds
+        for (int i = 0; i < RESOLUTION_INTERVAL_SEC && running; i++) {
+            sleep(1);
+        }
+    }
+    
+    printf("Background resolver thread stopped\n");
+    return NULL;
 }
 
 // Main program
@@ -318,11 +410,18 @@ int main(int argc, char **argv) {
         return 1;
     }
     
+    // Start domain resolution thread
+    if (pthread_create(&resolver_thread, NULL, resolver_thread_func, &blacklist_ip_map_fd) != 0) {
+        fprintf(stderr, "Failed to start resolver thread\n");
+        return 1;
+    }
+    
+    printf("\nAd blocker is running with dynamic domain resolution.\n");
+    printf("Press Ctrl+C to stop and view statistics.\n");
+    
     // Set up signal handler for graceful exit
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
-    
-    printf("\nAd blocker is running. Press Ctrl+C to stop and view statistics.\n");
     
     // Main loop: just keep the program running
     while (1) {
