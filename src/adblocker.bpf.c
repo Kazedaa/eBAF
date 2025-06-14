@@ -1,10 +1,12 @@
 // This is the eBPF program that runs in kernel space to inspect and filter network packets
 #include <linux/bpf.h>          // Core eBPF definitions
 #include <linux/if_ether.h>     // Ethernet header definitions
-#include <linux/ip.h>           // IP header definitions
+#include <linux/ip.h>           // IP header definitions (contains struct iphdr)
+#include <linux/types.h>        // Type definitions
 #include <linux/in.h>           // Internet protocol definitions
 #include <bpf/bpf_helpers.h>    // Helper functions for eBPF programs
 #include <bpf/bpf_endian.h>     // Functions to handle endianness (byte order)
+#include "ip_blacklist.h"       // Our pre-resolved IP list
 
 // Map to store blacklisted IP addresses
 // - BPF_MAP_TYPE_LRU_HASH: A hash map that evicts least recently used entries when full
@@ -31,6 +33,9 @@ struct {
 // Indices for the stats map
 #define STAT_TOTAL 0    // Index 0 stores the total packet count
 #define STAT_BLOCKED 1  // Index 1 stores the blocked packet count
+
+// We don't need to initialize the map from within the eBPF program
+// The userspace program will handle this completely
 
 // Helper function to increment statistics counters
 // Uses atomic operations to safely update counters from multiple CPUs
@@ -60,7 +65,7 @@ int xdp_blocker(struct xdp_md *ctx) {
     // Check if the packet is large enough to contain an Ethernet header
     if (data + sizeof(*eth) > data_end)
         return XDP_PASS;  // If not, let the packet continue normally
-    
+
     // Check if this is an IPv4 packet (we only filter these)
     // h_proto contains the protocol type, ETH_P_IP is IPv4
     if (eth->h_proto != bpf_htons(ETH_P_IP))
@@ -76,7 +81,8 @@ int xdp_blocker(struct xdp_md *ctx) {
     __u8 *blocked;
     
     // Check if the destination IP address is in our blacklist
-    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &ip->daddr);
+    __u32 dest_ip = ip->daddr;
+    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &dest_ip);
     if (blocked) {
         // IP is blacklisted, update our blocked packet counter
         update_stats(STAT_BLOCKED);
@@ -84,7 +90,8 @@ int xdp_blocker(struct xdp_md *ctx) {
     }
     
     // Check if the source IP address is in our blacklist
-    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &ip->saddr);
+    __u32 src_ip = ip->saddr;
+    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &src_ip);
     if (blocked) {
         // IP is blacklisted, update our blocked packet counter
         update_stats(STAT_BLOCKED);

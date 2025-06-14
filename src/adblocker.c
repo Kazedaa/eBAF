@@ -14,11 +14,13 @@
 #include <arpa/inet.h>          // IP manipulation functions
 #include <netdb.h>              // Network database functions
 #include <libgen.h>             // Pathname manipulation functions
+#include <sys/resource.h>       // For setrlimit
 
 #include <bpf/libbpf.h>         // libbpf functions for loading eBPF programs
 #include <bpf/bpf.h>            // Core eBPF userspace functions
 
 #include "adblocker.h"          // Our header with constants
+#include "ip_blacklist.h"
 
 // Global variables to maintain program state
 static int ifindex;             // Network interface index
@@ -28,8 +30,6 @@ static int stats_map_fd;        // File descriptor for the statistics map
 
 // Function to print all blocked IP addresses currently in the map
 static void print_ips(void) {
-    // printf("\nCurrently blocked IPs:\n");
-    
     // Create a temporary socket for network functions
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
@@ -42,6 +42,8 @@ static void print_ips(void) {
     __u8 value;
     int count = 0;
     
+    printf("IPs currently in the blacklist map:\n");
+    
     // Start iterating through the map entries
     if (bpf_map_get_next_key(blacklist_ip_map_fd, NULL, &key) == 0) {
         do {
@@ -50,7 +52,7 @@ static void print_ips(void) {
                 // Convert IP from numeric to human-readable format
                 struct in_addr addr;
                 addr.s_addr = key;
-                // printf("  %s\n", inet_ntoa(addr));
+                printf("  %s (hex: 0x%08X)\n", inet_ntoa(addr), key);
                 count++;
             }
         // Move to next key until we've gone through all entries
@@ -99,6 +101,19 @@ static char *get_bpf_object_path(const char *progname) {
     static char path[256];
     
     // Try different possible locations for the eBPF object file
+    // First, try in current directory
+    if (access("./adblocker.bpf.o", F_OK) != -1) {
+        snprintf(path, sizeof(path), "./adblocker.bpf.o");
+        return path;
+    }
+    
+    // Try in bin directory
+    if (access("./bin/adblocker.bpf.o", F_OK) != -1) {
+        snprintf(path, sizeof(path), "./bin/adblocker.bpf.o");
+        return path;
+    }
+    
+    // Try in obj directory
     if (access("./obj/adblocker.bpf.o", F_OK) != -1) {
         snprintf(path, sizeof(path), "./obj/adblocker.bpf.o");
         return path;
@@ -124,99 +139,6 @@ static char *get_bpf_object_path(const char *progname) {
     return NULL;
 }
 
-// Function to resolve a domain name or IP and add it to the blacklist
-static int resolve_and_add_ip(const char *domain_or_ip) {
-    struct in_addr addr;
-    
-    // Check if it's already an IP address
-    if (inet_pton(AF_INET, domain_or_ip, &addr) == 1) {
-        __u8 value = 1;
-        __u32 ip = addr.s_addr;
-        
-        // Update the map with this IP
-        if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
-            // printf("Added IP to blacklist: %s\n", domain_or_ip);
-            return 1;
-        } else {
-            fprintf(stderr, "Failed to add IP to blacklist: %s\n", domain_or_ip);
-            return 0;
-        }
-    }
-    
-    // If not an IP, try to resolve as a domain name
-    struct addrinfo hints, *result, *rp;
-    int count = 0;
-    __u8 value = 1;
-    
-    // Set up hints for address resolution
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;       // IPv4 only
-    hints.ai_socktype = SOCK_STREAM;
-    
-    // Resolve the domain name to one or more IP addresses
-    int status = getaddrinfo(domain_or_ip, NULL, &hints, &result);
-    if (status != 0) {
-        fprintf(stderr, "Failed to resolve %s: %s\n", domain_or_ip, gai_strerror(status));
-        return 0;
-    }
-    
-    // Add each resolved IP address to our blacklist
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
-        struct sockaddr_in *addr_in = (struct sockaddr_in *)rp->ai_addr;
-        __u32 ip = addr_in->sin_addr.s_addr;
-        
-        // Convert numeric IP to string for display
-        char ip_str[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &ip, ip_str, INET_ADDRSTRLEN);
-        
-        // Add to the map
-        if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
-            // printf("  Added IP: %s -> %s\n", domain_or_ip, ip_str);
-            count++;
-        }
-    }
-    
-    freeaddrinfo(result);
-    
-    if (count == 0) {
-        fprintf(stderr, "Warning: No IPs found for %s\n", domain_or_ip);
-        return 0;
-    }
-    
-    return count;
-}
-
-// Function to load a blacklist file
-static int load_blacklist(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (!file) {
-        fprintf(stderr, "Failed to open blacklist file: %s\n", filename);
-        return -1;
-    }
-    
-    char line[256];
-    int ip_count = 0;
-    
-    printf("Loading blacklist and resolving domains...\n");
-    
-    while (fgets(line, sizeof(line), file)) {
-        // Remove newline
-        line[strcspn(line, "\n")] = 0;
-        
-        // Skip empty lines and comments
-        if (strlen(line) == 0 || line[0] == '#') {
-            continue;
-        }
-        
-        // printf("Processing: %s\n", line);
-        ip_count += resolve_and_add_ip(line);
-    }
-    
-    fclose(file);
-    printf("\nLoaded %d IP addresses into blacklist\n", ip_count);
-    return ip_count;
-}
-
 // Function to print statistics about packet processing
 static void print_stats(void) {
     __u32 key;
@@ -235,18 +157,58 @@ static void print_stats(void) {
     printf("Total packets: %llu, Blocked packets: %llu\n", total, blocked);
 }
 
+// First, add verbose printing for the IPs we're loading
+static void load_ip_blacklist(void) {
+    int count = 0;
+    __u8 value = 1;
+    
+    printf("Loading %d IPs into blacklist map...\n", BLACKLIST_SIZE);
+    
+    // Update the map directly from userspace
+    for (int i = 0; i < BLACKLIST_SIZE; i++) {
+        __u32 ip = htonl(blacklisted_ips[i]);  // Convert to network byte order
+        
+        // Print in human-readable format for debugging
+        struct in_addr addr;
+        addr.s_addr = ip;
+        printf("  Loading IP: %s (hex: 0x%08X)\n", inet_ntoa(addr), ip);
+        
+        if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
+            count++;
+        } else {
+            printf("  Failed to load IP: %s (errno: %d)\n", inet_ntoa(addr), errno);
+        }
+    }
+    
+    printf("Successfully loaded %d IPs into blacklist map\n", count);
+}
+
+// Function to increase RLIMIT_MEMLOCK to allow eBPF maps to be created
+static void increase_memlock_limit(void) {
+    struct rlimit rlim = {
+        .rlim_cur = RLIM_INFINITY,
+        .rlim_max = RLIM_INFINITY
+    };
+    
+    if (setrlimit(RLIMIT_MEMLOCK, &rlim)) {
+        fprintf(stderr, "Warning: Failed to increase RLIMIT_MEMLOCK limit: %s\n", 
+                strerror(errno));
+        fprintf(stderr, "You may need to run with sudo or increase the limit manually\n");
+        fprintf(stderr, "Try running: 'sudo ./bin/run-adblocker.sh <interface>'\n");
+    }
+}
+
 // Main program
 int main(int argc, char **argv) {
     // Check command line arguments
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <interface> <blacklist_file>\n", argv[0]);
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <interface>\n", argv[0]);
         fprintf(stderr, "\n");
         list_interfaces();
         return 1;
     }
     
     const char *ifname = argv[1];        // Network interface name
-    const char *blacklist_file = argv[2]; // Path to blacklist file
     
     // Convert interface name to interface index
     ifindex = if_nametoindex(ifname);
@@ -256,6 +218,9 @@ int main(int argc, char **argv) {
         list_interfaces();
         return 1;
     }
+
+    // Increase the RLIMIT_MEMLOCK limit
+    increase_memlock_limit();
     
     // Load our eBPF program
     char *bpf_obj_path = get_bpf_object_path(argv[0]);
@@ -310,11 +275,8 @@ int main(int argc, char **argv) {
     key = STAT_BLOCKED;
     bpf_map_update_elem(stats_map_fd, &key, &value, BPF_ANY);
     
-    // Load the blacklist of IPs to block
-    if (load_blacklist(blacklist_file) <= 0) {
-        fprintf(stderr, "Error: No valid IPs loaded. Check the blacklist file.\n");
-        return 1;
-    }
+    // Load the IP blacklist directly from userspace
+    load_ip_blacklist();
     
     // Display the list of blocked IPs
     print_ips();
@@ -342,29 +304,29 @@ int main(int argc, char **argv) {
             printf("Successfully attached XDP program in %s mode\n", mode_names[i]);
             attached = 1;
             break;
-        } else {
-            printf("Failed to attach in %s mode: %s\n", mode_names[i], strerror(errno));
+        }
+        
+        // Print error only if it's not "Operation not supported"
+        if (errno != EOPNOTSUPP) {
+            perror("XDP attach");
         }
     }
     
-    // Check if we were able to attach at all
     if (!attached) {
-        fprintf(stderr, "Failed to attach XDP program in any mode\n");
-        fprintf(stderr, "Make sure you have sufficient privileges (run as root)\n");
+        fprintf(stderr, "Error: Could not attach XDP program to interface\n");
         return 1;
     }
     
-    printf("eBPF traffic blocker attached to %s\n", ifname);
-    printf("Press Ctrl+C to stop\n");
-    
-    // Set up signal handlers to clean up on program exit
+    // Set up signal handler for graceful exit
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
     
-    // Main loop - print statistics every second
+    printf("\nAdblocker is running. Press Ctrl+C to stop.\n");
+    
+    // Main loop: print statistics every second
     while (1) {
-        sleep(1);
         print_stats();
+        sleep(1);
     }
     
     return 0;
