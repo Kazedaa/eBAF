@@ -29,7 +29,7 @@ OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 # Default blacklist file (can be overridden with BLACKLIST=path/to/file make option)
 BLACKLIST ?= spotify-stable
 
-all: directories $(TARGET) wrapper
+all: directories $(TARGET) wrapper health-check
 
 directories:
 	mkdir -p $(OBJ_DIR)
@@ -58,8 +58,10 @@ install: all
 	sudo cp $(TARGET) /usr/local/bin/
 	sudo cp $(BIN_DIR)/*.bpf.o /usr/local/share/ebaf/
 	sudo cp $(BIN_DIR)/run-adblocker.sh /usr/local/bin/ebaf
+	sudo cp $(BIN_DIR)/health-check.sh /usr/local/bin/ebaf-check
 	@echo "Installed to /usr/local/bin/ebaf"
 	@echo "Run with: sudo ebaf <interface>"
+	@echo "Health check: sudo ebaf-check"
 
 # Add uninstall target to remove all installed components
 uninstall:
@@ -71,6 +73,10 @@ uninstall:
 	@if [ -f /usr/local/bin/ebaf ]; then \
 		sudo rm -f /usr/local/bin/ebaf; \
 		echo "Removed /usr/local/bin/ebaf"; \
+	fi
+	@if [ -f /usr/local/bin/ebaf-check ]; then \
+		sudo rm -f /usr/local/bin/ebaf-check; \
+		echo "Removed /usr/local/bin/ebaf-check"; \
 	fi
 	@if [ -d /usr/local/share/ebaf ]; then \
 		sudo rm -rf /usr/local/share/ebaf; \
@@ -90,6 +96,13 @@ test-blacklist: directories
 	@echo "google.com" >> /tmp/test-ip-blacklist.txt
 	@make BLACKLIST=/tmp/test-ip-blacklist.txt
 	@echo "Built with test blacklist"
+
+# Create a health check script
+health-check:
+	@cp $(SRC_DIR)/health_check.sh $(BIN_DIR)/health-check.sh
+	@chmod +x $(BIN_DIR)/health-check.sh
+	@echo "Created health check script at $(BIN_DIR)/health-check.sh"
+	@echo "Run with: sudo ./bin/health-check.sh"
 
 # Create a wrapper script that increases RLIMIT_MEMLOCK before running
 wrapper:
@@ -137,8 +150,10 @@ help:
 	@echo ""
 	@echo "After building, run with:"
 	@echo "  sudo ./bin/run-adblocker.sh <interface>"
+	@echo "  ./bin/health-check.sh      - Run health check"
 	@echo ""
 	@echo "After installing, run with:"
 	@echo "  sudo ebaf <interface>"
+	@echo "  sudo ebaf-check            - Run health check"
 
-.PHONY: all directories clean install uninstall find-interface test-blacklist wrapper help
+.PHONY: all directories clean install uninstall find-interface test-blacklist wrapper help health-check

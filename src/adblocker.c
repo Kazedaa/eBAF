@@ -1,5 +1,4 @@
 // This is the userspace part of our program
-// It loads the eBPF program into the kernel and manages its operation
 
 #include <stdio.h>              // Standard I/O functions
 #include <stdlib.h>             // Standard library functions
@@ -15,6 +14,7 @@
 #include <netdb.h>              // Network database functions
 #include <libgen.h>             // Pathname manipulation functions
 #include <sys/resource.h>       // For setrlimit
+#include <time.h>               // For time tracking
 
 #include <bpf/libbpf.h>         // libbpf functions for loading eBPF programs
 #include <bpf/bpf.h>            // Core eBPF userspace functions
@@ -27,6 +27,7 @@ static int ifindex;             // Network interface index
 static struct bpf_object *obj;  // Our loaded eBPF object
 static int blacklist_ip_map_fd; // File descriptor for the IP blacklist map
 static int stats_map_fd;        // File descriptor for the statistics map
+static time_t start_time;       // When the program started
 
 // Function to print all blocked IP addresses currently in the map
 static void print_ips(void) {
@@ -58,10 +59,38 @@ static void print_ips(void) {
     close(sock);
 }
 
+// Function to get current statistics
+static void get_stats(__u64 *total, __u64 *blocked) {
+    __u32 key;
+    
+    // Get total packets count
+    key = STAT_TOTAL;
+    if (bpf_map_lookup_elem(stats_map_fd, &key, total) != 0)
+        *total = 0;
+    
+    // Get blocked packets count
+    key = STAT_BLOCKED;
+    if (bpf_map_lookup_elem(stats_map_fd, &key, blocked) != 0)
+        *blocked = 0;
+}
+
 // Function to clean up when the program exits
 static void cleanup(int sig) {
-    (void)sig;  // Mark parameter as used to avoid warning
-    printf("\nRemoving XDP program from interface %d\n", ifindex);
+    // Get final statistics
+    __u64 total, blocked;
+    get_stats(&total, &blocked);
+    
+    // Calculate uptime
+    time_t end_time = time(NULL);
+    double uptime = difftime(end_time, start_time);
+    
+    printf("\n--- eBAF Statistics ---\n");
+    printf("Uptime: %.1f seconds\n", uptime);
+    printf("Total packets processed: %llu\n", total);
+    printf("Packets blocked: %llu\n", blocked);
+    printf("Blocking rate: %.2f%%\n", (total > 0) ? ((double)blocked / total * 100.0) : 0);
+    
+    printf("Removing XDP program from interface %d\n", ifindex);
     // Detach our eBPF program from the network interface
     bpf_xdp_detach(ifindex, 0, NULL);
     exit(0);
@@ -129,26 +158,12 @@ static char *get_bpf_object_path(const char *progname) {
     if (access(path, F_OK) != -1)
         return path;
     
+    snprintf(path, sizeof(path), "/usr/local/share/ebaf/adblocker.bpf.o");
+    if (access(path, F_OK) != -1)
+        return path;
+    
     // Could not find the object file
     return NULL;
-}
-
-// Function to print statistics about packet processing
-static void print_stats(void) {
-    __u32 key;
-    __u64 total, blocked;
-    
-    // Get total packets count
-    key = STAT_TOTAL;
-    if (bpf_map_lookup_elem(stats_map_fd, &key, &total) != 0)
-        total = 0;
-    
-    // Get blocked packets count
-    key = STAT_BLOCKED;
-    if (bpf_map_lookup_elem(stats_map_fd, &key, &blocked) != 0)
-        blocked = 0;
-    
-    printf("Total packets: %llu, Blocked packets: %llu\n", total, blocked);
 }
 
 // Function to increase RLIMIT_MEMLOCK to allow eBPF maps to be created
@@ -190,6 +205,9 @@ int main(int argc, char **argv) {
         list_interfaces();
         return 1;
     }
+
+    // Record start time
+    start_time = time(NULL);
     
     const char *ifname = argv[1];        // Network interface name
     
@@ -304,11 +322,10 @@ int main(int argc, char **argv) {
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
     
-    printf("\nAd blocker is running. Press Ctrl+C to stop.\n");
+    printf("\nAd blocker is running. Press Ctrl+C to stop and view statistics.\n");
     
-    // Main loop: print statistics every second
+    // Main loop: just keep the program running
     while (1) {
-        print_stats();
         sleep(1);
     }
     
