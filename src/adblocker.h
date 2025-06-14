@@ -10,7 +10,7 @@
 // Background resolution settings
 #define DOMAIN_MAX_SIZE 256
 #define MAX_DOMAINS 10000
-#define RESOLUTION_INTERVAL_SEC 60  // Re-resolve every 15 minutes
+#define RESOLUTION_INTERVAL_SEC 10 * 60  // Re-resolve every 20 minutes
 
 // Domain resolution status
 #define RESOLUTION_SUCCESS 0

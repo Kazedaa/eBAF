@@ -138,6 +138,46 @@ static void list_interfaces(void) {
     pclose(fp);
 }
 
+// Function to get the default network interface
+static char *get_default_interface(void) {
+    static char default_if[IF_NAMESIZE] = {0};
+    
+    // Use the same approach as the health check script
+    // Try to find the interface with the default route to the internet
+    FILE *fp = popen("ip -o route get 1.1.1.1 2>/dev/null | awk '{print $5}'", "r");
+    if (fp != NULL) {
+        if (fgets(default_if, sizeof(default_if), fp) != NULL) {
+            // Remove newline character
+            default_if[strcspn(default_if, "\n")] = 0;
+            
+            // Skip loopback interface
+            if (strcmp(default_if, "lo") == 0) {
+                default_if[0] = '\0';
+            }
+        }
+        pclose(fp);
+    }
+    
+    // If still not found, get the first non-loopback interface
+    if (default_if[0] == '\0') {
+        fp = popen("ip -o link show | grep -v 'lo:' | head -n 1 | cut -d: -f2 | tr -d ' '", "r");
+        if (fp != NULL) {
+            if (fgets(default_if, sizeof(default_if), fp) != NULL) {
+                // Remove newline character
+                default_if[strcspn(default_if, "\n")] = 0;
+            }
+            pclose(fp);
+        }
+    }
+    
+    // Return NULL if no interface was found
+    if (default_if[0] == '\0') {
+        return NULL;
+    }
+    
+    return default_if;
+}
+
 // Function to find the path to our eBPF object file
 static char *get_bpf_object_path(const char *progname) {
     static char path[256];
@@ -298,18 +338,34 @@ static void *resolver_thread_func(void *data) {
 
 // Main program
 int main(int argc, char **argv) {
+    const char *ifname = NULL;
+    
     // Check command line arguments
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <interface>\n", argv[0]);
+    if (argc > 2) {
+        fprintf(stderr, "Usage: %s [interface]\n", argv[0]);
+        fprintf(stderr, "If no interface is specified, the default route interface will be used.\n");
         fprintf(stderr, "\n");
         list_interfaces();
         return 1;
+    } else if (argc == 2) {
+        // Interface specified on command line
+        ifname = argv[1];
+    } else {
+        // No interface specified, use default
+        ifname = get_default_interface();
+        
+        if (!ifname) {
+            fprintf(stderr, "Error: Could not determine default network interface\n");
+            fprintf(stderr, "Please specify an interface manually:\n");
+            list_interfaces();
+            return 1;
+        }
+        
+        printf("Using default network interface: %s\n", ifname);
     }
 
     // Record start time
     start_time = time(NULL);
-    
-    const char *ifname = argv[1];        // Network interface name
     
     // Convert interface name to interface index
     ifindex = if_nametoindex(ifname);
