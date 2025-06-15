@@ -8,6 +8,9 @@ import os                   # For OS-related functions (e.g., checking file exis
 import re                   # For regex operations.
 from datetime import datetime  # To generate formatted timestamps.
 
+# Global variable to track dashboard start time
+DASHBOARD_START_TIME = time.time()
+
 # DashboardHandler extends SimpleHTTPRequestHandler to serve both HTML and API endpoints.
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     # Overrides the GET HTTP method.
@@ -52,7 +55,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             'blocking_rate': 0.0,
             'total_rate': 0.0,
             'blocked_rate': 0.0,
-            'blocked_domains': []
+            'blocked_domains': [],
+            'rate_history': []
         }
 
         # Check if eBAF (the userspace program loading the eBPF XDP program) is running.
@@ -65,26 +69,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         # Find the network interface with an attached XDP program.
         # eBPF XDP programs are attached at the network driver level.
-        try:
-            result = subprocess.run(['ip', 'link', 'show'], capture_output=True, text=True)
-            lines = result.stdout.split('\n')
-            for i, line in enumerate(lines):
-                if 'xdp' in line.lower():
-                    # Retrieve the interface name from the previous line using regex.
-                    if i > 0:
-                        match = re.search(r'\d+:\s+(\w+):', lines[i-1])
-                        if match:
-                            stats['interface'] = match.group(1)
-                            break
-        except:
-            pass
+        stats['interface'] = self.get_xdp_interface()
 
-        # Get approximate runtime from system uptime.
-        try:
-            result = subprocess.run(['uptime', '-p'], capture_output=True, text=True)
-            stats['runtime'] = result.stdout.strip().replace('up ', '')
-        except:
-            pass
+        # Calculate dashboard runtime
+        runtime_seconds = int(time.time() - DASHBOARD_START_TIME)
+        hours = runtime_seconds // 3600
+        minutes = (runtime_seconds % 3600) // 60
+        seconds = runtime_seconds % 60
+        
+        if hours > 0:
+            stats['runtime'] = f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            stats['runtime'] = f"{minutes}m {seconds}s"
+        else:
+            stats['runtime'] = f"{seconds}s"
 
         # Read statistics from a temporary file created by the userspace program.
         # This file is populated by the eBPF program via updating maps and is read periodically.
@@ -130,29 +128,149 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         except:
             pass
 
+        # Get rate history for the graph
+        stats['rate_history'] = self.get_rate_history(stats['blocked_rate'])
+
         # Retrieve a list of recently blocked domains. This can be expanded to read log files or BPF map dumps.
         stats['blocked_domains'] = self.get_blocked_domains()
 
         return stats
 
+    # Helper function to get the interface with XDP program attached
+    def get_xdp_interface(self):
+        try:
+            result = subprocess.run(['ip', 'link', 'show'], capture_output=True, text=True)
+            lines = result.stdout.split('\n')
+            for i, line in enumerate(lines):
+                if 'xdp' in line.lower() and 'prog' in line.lower():
+                    # Get the interface name from the current or previous line
+                    for j in range(max(0, i-2), min(len(lines), i+2)):
+                        match = re.search(r'\d+:\s+(\w+):', lines[j])
+                        if match:
+                            return match.group(1)
+        except:
+            pass
+        return 'Unknown'
+
+    # Get rate history for time-series graph
+    def get_rate_history(self, current_rate):
+        history_file = '/tmp/ebaf-rate-history.json'
+        history = []
+        
+        try:
+            if os.path.exists(history_file):
+                with open(history_file, 'r') as f:
+                    history = json.load(f)
+        except:
+            history = []
+        
+        # Add current rate with timestamp
+        current_time = datetime.now()
+        history.append({
+            'time': current_time.strftime("%H:%M:%S"),
+            'rate': current_rate
+        })
+        
+        # Keep only last 100 data points for full graph width utilization
+        if len(history) > 100:
+            history = history[-100:]
+        
+        # Save updated history
+        try:
+            with open(history_file, 'w') as f:
+                json.dump(history, f)
+        except:
+            pass
+        
+        return history
+
     # Stub function to get recently blocked domains.
     # In a full implementation, this could extract domain names from logs or BPF statistics.
     def get_blocked_domains(self):
         """Get recently blocked domains - simplified version"""
-        blocked_domains = []
-        # Implementation can be enhanced to actually track blocked domains.
-        return blocked_domains
+        # This is a placeholder. In a real implementation, you would:
+        # 1. Read from BPF maps or log files
+        # 2. Parse domain names from blocked requests
+        # 3. Return the most recently blocked domains
+        return [
+            "doubleclick.net",
+            "googlesyndication.com", 
+            "facebook.com/tr",
+            "analytics.google.com",
+            "ads.yahoo.com",
+            "googletagmanager.com",
+            "scorecardresearch.com",
+            "outbrain.com",
+            "taboola.com",
+            "amazon-adsystem.com"
+        ]
 
     # Generate HTML dashboard using the collected statistics.
     def generate_html(self, stats):
         # Determine status display based on whether eBAF is running.
-        status_color = '#00ff41' if stats['running'] else '#ff4444'
-        status_text = '✓ Running' if stats['running'] else '✗ Stopped'
+        status_text = 'ACTIVE' if stats['running'] else 'INACTIVE'
         
-        # Generate simple bar chart data for packet rates.
-        max_rate = max(stats['total_rate'], 10)  # Set a minimum scale.
-        total_bar_height = min((stats['total_rate'] / max_rate) * 100, 100)
-        blocked_bar_height = min((stats['blocked_rate'] / max_rate) * 100, 100)
+        # Create clean line graph for blocked rate
+        def create_rate_graph():
+            if not stats['rate_history'] or len(stats['rate_history']) < 2:
+                return "Collecting data..."
+            
+            # Find max rate for scaling, with minimum of 1 to avoid division by zero
+            max_rate = max([point['rate'] for point in stats['rate_history']] + [1])
+            
+            # Graph dimensions
+            height = 16
+            width = min(500, len(stats['rate_history']) * 2)  # Dynamic width based on data
+            
+            # Create the graph grid
+            graph_lines = []
+            
+            # Initialize empty grid
+            grid = [[' ' for _ in range(width)] for _ in range(height)]
+            
+            # Plot the line
+            data_points = stats['rate_history'][-width//2:]  # Use recent data points
+            
+            for i in range(len(data_points) - 1):
+                if i * 2 >= width - 1:
+                    break
+                    
+                # Current and next points
+                curr_rate = (data_points[i]['rate'] / max_rate) * (height - 1)
+                next_rate = (data_points[i + 1]['rate'] / max_rate) * (height - 1)
+                
+                # Draw line between points
+                x1, y1 = i * 2, int(curr_rate)
+                x2, y2 = min((i + 1) * 2, width - 1), int(next_rate)
+                
+                # Simple line drawing
+                if x1 < width and y1 < height:
+                    grid[height - 1 - y1][x1] = '●'
+                if x2 < width and y2 < height:
+                    grid[height - 1 - y2][x2] = '●'
+                
+                # Connect points with simple interpolation
+                if abs(y2 - y1) > 1:
+                    steps = abs(y2 - y1)
+                    for step in range(1, steps):
+                        interp_y = y1 + (y2 - y1) * step // steps
+                        interp_x = x1 + (x2 - x1) * step // steps
+                        if interp_x < width and 0 <= interp_y < height:
+                            grid[height - 1 - interp_y][interp_x] = '●'
+            
+            # Convert grid to strings with Y-axis
+            for row in range(height):
+                line = "█|" + ''.join(grid[row])
+                graph_lines.append(line)
+            
+            # Add X-axis
+            x_axis = "█+" + "█" * width
+            graph_lines.append(x_axis)
+            
+            return '\n'.join(graph_lines)
+
+        
+        rate_graph = create_rate_graph()
         
         # Return an HTML page that includes auto-refresh meta tag, CSS styling, and inline stats.
         return f"""
@@ -161,10 +279,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>eBAF Dashboard</title>
+    <title>eBAF Terminal Dashboard</title>
     <meta http-equiv="refresh" content="3">
     <style>
-        /* CSS styles for dashboard layout and visual elements */
         * {{
             margin: 0;
             padding: 0;
@@ -172,251 +289,281 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         }}
         
         body {{
-            font-family: 'Courier New', monospace;
-            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
-            color: #00ff41;
-            min-height: 100vh;
-            padding: 20px;
+            font-family: 'Courier New', 'Liberation Mono', 'DejaVu Sans Mono', monospace;
+            background: #000000;
+            color: #ffffff;
+            line-height: 1.2;
+            padding: 15px;
+            font-size: 14px;
+            height: 100vh;
+            overflow: hidden;
         }}
         
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
+        .terminal {{
+            background: #000000;
+            border: 2px solid #606060;
+            border-radius: 0;
+            padding: 25px;
+            box-shadow: none;
+            height: calc(100vh - 30px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }}
         
         .header {{
             text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: rgba(0, 255, 65, 0.1);
-            border: 2px solid #00ff41;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
+            margin-bottom: 20px;
+            border-bottom: 2px solid #606060;
+            padding-bottom: 20px;
+            flex-shrink: 0;
         }}
         
-        .header h1 {{
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 0 0 10px #00ff41;
-        }}
-        
-        .grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        
-        .card {{
-            background: rgba(0, 0, 0, 0.7);
-            border: 2px solid #00ff41;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.2);
-        }}
-        
-        .card h2 {{
-            color: #00ff41;
+        .ascii-title {{
+            color: #ffffff;
+            font-size: 16px;
+            line-height: 1;
             margin-bottom: 15px;
-            font-size: 1.3em;
-            text-align: center;
-        }}
-        
-        .status {{
-            color: {status_color};
-            font-size: 1.2em;
+            white-space: pre;
             font-weight: bold;
         }}
         
-        .metric {{
+        .tagline {{
+            color: #00ff00;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 15px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }}
+        
+        .main-content {{
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow: hidden;
+        }}
+        
+        .top-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            flex-shrink: 0;
+        }}
+        
+        .graph-section {{
+            border: 2px solid #606060;
+            padding: 15px;
+            background: #0a0a0a;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }}
+        
+        .section {{
+            border: 2px solid #606060;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #0a0a0a;
+        }}
+        
+        .section-title {{
+            color: #00ff00;
+            font-weight: bold;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #606060;
+            padding-bottom: 8px;
+            font-size: 14px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }}
+        
+        .status-line {{
             display: flex;
             justify-content: space-between;
-            margin: 10px 0;
-            padding: 5px 0;
-            border-bottom: 1px solid rgba(0, 255, 65, 0.3);
+            margin: 8px 0;
+            font-family: monospace;
+            font-size: 13px;
         }}
         
-        .metric:last-child {{
-            border-bottom: none;
-        }}
-        
-        .metric-label {{
-            color: #88cc88;
-        }}
-        
-        .metric-value {{
-            color: #00ff41;
+        .status-active {{
+            color: #00ff00;
             font-weight: bold;
         }}
         
-        .progress-bar {{
-            width: 100%;
-            height: 20px;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid #00ff41;
-            border-radius: 10px;
+        .status-inactive {{
+            color: #ff0000;
+            font-weight: bold;
+        }}
+        
+        .graph {{
+            font-family: monospace;
+            color: #00ff00;
+            white-space: pre;
+            font-size: 10px;
+            line-height: 1;
+            text-align: left;
+            flex: 1;
             overflow: hidden;
-            margin: 10px 0;
+            font-weight: normal;
         }}
         
-        .progress-fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #ff4444, #ffaa00, #00ff41);
-            transition: width 0.5s ease;
-            border-radius: 10px;
-        }}
-        
-        .chart {{
-            width: 100%;
-            height: 120px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid #00ff41;
-            border-radius: 5px;
-            position: relative;
-            display: flex;
-            align-items: end;
-            justify-content: center;
-            gap: 20px;
+        .domains-list {{
+            flex: 1;
+            overflow: hidden;
+            border: 1px solid #606060;
             padding: 10px;
-        }}
-        
-        .chart-bar {{
-            width: 30px;
-            background: #00ff41;
-            border-radius: 3px 3px 0 0;
-            transition: height 0.5s ease;
-            position: relative;
-        }}
-        
-        .chart-bar.total {{
-            background: #00aaff;
-        }}
-        
-        .chart-bar.blocked {{
-            background: #ff4444;
-        }}
-        
-        .chart-label {{
-            position: absolute;
-            bottom: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.8em;
-            color: #88cc88;
-        }}
-        
-        .domain-list {{
-            max-height: 150px;
-            overflow-y: auto;
+            background: #050505;
         }}
         
         .domain-item {{
-            padding: 5px 0;
-            border-bottom: 1px solid rgba(0, 255, 65, 0.2);
-            font-size: 0.9em;
+            color: #ff6060;
+            margin: 4px 0;
+            font-family: monospace;
+            font-size: 12px;
+            font-weight: bold;
         }}
         
-        .no-data {{
-            text-align: center;
-            color: #666;
+        .domain-item:before {{
+            content: "> ";
+            color: #00ff00;
+        }}
+        
+        .no-domains {{
+            color: #808080;
             font-style: italic;
+            text-align: center;
             padding: 20px;
         }}
         
         .alert {{
-            background: rgba(255, 68, 68, 0.2);
-            border: 2px solid #ff4444;
-            color: #ff4444;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
+            background: #330000;
+            border: 2px solid #ff0000;
+            color: #ff6060;
+            padding: 10px;
+            margin: 15px 0;
             text-align: center;
+            font-weight: bold;
+            text-transform: uppercase;
         }}
         
-        .footer {{
-            text-align: center;
-            margin-top: 30px;
-            padding: 15px;
-            color: #666;
+        .number-highlight {{
+            color: #00ff00;
+            font-weight: bold;
+        }}
+        
+        .stats-content {{
+            flex: 1;
+            overflow: hidden;
+        }}
+        
+        /* Hide scrollbars completely */
+        ::-webkit-scrollbar {{
+            display: none;
+        }}
+        
+        * {{
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }}
+        
+        .label {{
+            color: #c0c0c0;
+        }}
+        
+        @media (max-width: 1200px) {{
+            .top-grid {{
+                grid-template-columns: 1fr 1fr;
+            }}
+        }}
+        
+        @media (max-width: 800px) {{
+            .top-grid {{
+                grid-template-columns: 1fr;
+            }}
         }}
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="terminal">
         <div class="header">
-            <h1>🛡️ eBAF Dashboard</h1>
-            <p>eBPF Ad Blocker Firewall</p>
-            <p>Last Updated: {stats['timestamp']}</p>
+            <div class="ascii-title">
+           /$$$$$$$   /$$$$$$  /$$$$$$$$
+          | $$__  $$ /$$__  $$| $$_____/
+  /$$$$$$ | $$  \ $$| $$  \ $$| $$      
+ /$$__  $$| $$$$$$$ | $$$$$$$$| $$$$$   
+| $$$$$$$$| $$__  $$| $$__  $$| $$__/   
+| $$_____/| $$  \ $$| $$  | $$| $$      
+|  $$$$$$$| $$$$$$$/| $$  | $$| $$      
+ \_______/|_______/ |__/  |__/|__/      
+            </div>
+            <div class="tagline">⚡ DROP ADS AT THE KERNEL ⚡</div>
         </div>
         
-        {'<div class="alert">⚠️ eBAF is not running! Start it with: sudo ebaf</div>' if not stats['running'] else ''}
+        {'<div class="alert">⚠ ERROR: eBAF process not running! Execute: sudo ebaf ⚠</div>' if not stats['running'] else ''}
         
-        <div class="grid">
-            <div class="card">
-                <h2>📊 General Status</h2>
-                <div class="metric">
-                    <span class="metric-label">Status:</span>
-                    <span class="metric-value status">{status_text}</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Runtime:</span>
-                    <span class="metric-value">{stats['runtime']}</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Interface:</span>
-                    <span class="metric-value">{stats['interface']}</span>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>📈 Packet Statistics</h2>
-                <div class="metric">
-                    <span class="metric-label">Total Packets:</span>
-                    <span class="metric-value">{stats['total_packets']:,}</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Blocked Packets:</span>
-                    <span class="metric-value">{stats['blocked_packets']:,}</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Blocking Rate:</span>
-                    <span class="metric-value">{stats['blocking_rate']:.2f}%</span>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {min(stats['blocking_rate'], 100)}%"></div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>⚡ Live Rates</h2>
-                <div class="metric">
-                    <span class="metric-label">Total Rate:</span>
-                    <span class="metric-value">{stats['total_rate']:.1f} pkt/s</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Blocked Rate:</span>
-                    <span class="metric-value">{stats['blocked_rate']:.1f} pkt/s</span>
-                </div>
-                <div class="chart">
-                    <div class="chart-bar total" style="height: {total_bar_height}%">
-                        <div class="chart-label">Total</div>
+        <div class="main-content">
+            <div class="top-grid">
+                <div class="section">
+                    <div class="section-title">[System Status]</div>
+                    <div class="stats-content">
+                        <div class="status-line">
+                            <span class="label">Service:</span>
+                            <span class="{'status-active' if stats['running'] else 'status-inactive'}">{status_text}</span>
+                        </div>
+                        <div class="status-line">
+                            <span class="label">Interface:</span>
+                            <span class="number-highlight">{stats['interface']}</span>
+                        </div>
+                        <div class="status-line">
+                            <span class="label">Runtime:</span>
+                            <span class="number-highlight">{stats['runtime']}</span>
+                        </div>
                     </div>
-                    <div class="chart-bar blocked" style="height: {blocked_bar_height}%">
-                        <div class="chart-label">Blocked</div>
+                </div>
+                
+                <div class="section">
+                    <div class="section-title">[Packet Stats]</div>
+                    <div class="stats-content">
+                        <div class="status-line">
+                            <span class="label">Total:</span>
+                            <span class="number-highlight">{stats['total_packets']:,}</span>
+                        </div>
+                        <div class="status-line">
+                            <span class="label">Blocked:</span>
+                            <span class="number-highlight">{stats['blocked_packets']:,}</span>
+                        </div>
+                        <div class="status-line">
+                            <span class="label">Total Rate:</span>
+                            <span class="number-highlight">{stats['total_rate']:.1f}/s</span>
+                        </div>
+                        <div class="status-line">
+                            <span class="label">Block Rate:</span>
+                            <span class="number-highlight">{stats['blocked_rate']:.1f}/s</span>
+                        </div>
+                        <div class="status-line">
+                            <span class="label">Block %:</span>
+                            <span class="number-highlight">{stats['blocking_rate']:.1f}%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <div class="section-title">[Blocked Domains]</div>
+                    <div class="domains-list">
+                        {''.join([f'<div class="domain-item">{domain}</div>' for domain in stats['blocked_domains'][:10]]) if stats['blocked_domains'] else '<div class="no-domains">No blocks recorded</div>'}
                     </div>
                 </div>
             </div>
             
-            <div class="card">
-                <h2>🚫 Recently Blocked</h2>
-                <div class="domain-list">
-                    {''.join([f'<div class="domain-item">{domain}</div>' for domain in stats['blocked_domains']]) if stats['blocked_domains'] else '<div class="no-data">No recent blocks recorded</div>'}
-                </div>
+            <div class="graph-section">
+                <div class="section-title">[Block Rate Graph - Live Time Series]</div>
+                <div class="graph">{rate_graph}</div>
             </div>
-        </div>
-        
-        <div class="footer">
-            <p>🛡️ eBAF Dashboard - Auto-refresh every 3 seconds</p>
         </div>
     </div>
 </body>
@@ -426,17 +573,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 # Start the dashboard server on a specified port.
 def start_dashboard(port=8080):
     """Start the dashboard server"""
+    global DASHBOARD_START_TIME
+    DASHBOARD_START_TIME = time.time()  # Record start time
+    
     try:
-        Handler = DashboardHandler
-        # Create a TCP server that listens on all interfaces on the chosen port.
-        with socketserver.TCPServer(("", port), Handler) as httpd:
-            print(f"🌐 eBAF Dashboard started at http://localhost:{port}")
-            print("Press Ctrl+C to stop the dashboard")
+        with socketserver.TCPServer(("", port), DashboardHandler) as httpd:
+            print(f"eBAF Dashboard server running on http://localhost:{port}")
+            print("Press Ctrl+C to stop...")
             httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n👋 Dashboard stopped")
-    except Exception as e:
-        print(f"❌ Error starting dashboard: {e}")
+        print("\nDashboard server stopped.")
+    except OSError as e:
+        if e.errno == 98:  # Address already in use
+            print(f"Error: Port {port} is already in use")
+            print("Another instance might be running or another service is using this port")
+        else:
+            print(f"Error starting server: {e}")
 
 if __name__ == "__main__":
     import sys

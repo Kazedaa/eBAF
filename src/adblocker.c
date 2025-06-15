@@ -59,7 +59,6 @@ static int ifindex;             // Index of the network interface (obtained with
 static struct bpf_object *obj;  // Pointer to the loaded eBPF object which contains our eBPF programs
 static int blacklist_ip_map_fd; // File descriptor for the eBPF map holding blacklisted IPs
 static int stats_map_fd;        // File descriptor for the eBPF map holding statistics data
-// static time_t start_time;       // Stores the time the program started (used for uptime calculation)
 
 static pthread_t resolver_thread;   // Thread for resolving domain names into IPs
 static volatile bool running = true;  // Flag that controls the main loop and thread execution
@@ -93,10 +92,6 @@ static void cleanup(int sig) {
     // Get final statistics before cleanup.
     __u64 total, blocked;
     get_stats(&total, &blocked);
-    
-    // Compute program uptime.
-    // time_t end_time = time(NULL);
-    // double uptime = difftime(end_time, start_time); // difftime(): returns difference between two time_t values.
     
     // Stop the resolver thread.
     running = false;
@@ -306,9 +301,6 @@ int main(int argc, char **argv) {
         }
         
     }
-
-    // Record the start time for uptime calculations.
-    // start_time = time(NULL);
     
     // Convert the interface name to its index.
     ifindex = if_nametoindex(ifname); // if_nametoindex(): returns the index of a network interface given its name.

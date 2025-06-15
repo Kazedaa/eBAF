@@ -106,8 +106,6 @@ done
 # Purpose: Locate the adblocker binary in common installation paths
 find_adblocker() {
     local paths=(
-        "$(dirname "$0")/adblocker"
-        "./adblocker"
         "/usr/local/bin/adblocker"
         "./bin/adblocker"
     )
@@ -172,10 +170,7 @@ start_dashboard() {
     
     # Locate the dashboard script in common paths
     local paths=(
-        "$(dirname "$0")/ebaf_dash.py"
         "./bin/ebaf_dash.py"
-        "./ebaf_dash.py"
-        "./src/ebaf_dash.py"
         "/usr/local/share/ebaf/ebaf_dash.py"
     )
     
@@ -208,7 +203,7 @@ start_dashboard() {
     DASHBOARD_PID=$!
     
     # Wait longer for startup
-    sleep 3
+    sleep 10
     
     # Verify dashboard started successfully
     if kill -0 $DASHBOARD_PID 2>/dev/null; then
@@ -242,7 +237,6 @@ start_dashboard() {
 cleanup() {
     if [ $QUIET_MODE -eq 0 ]; then
         echo ""
-        echo "=========================================="
         echo "Shutting down eBAF..."
         echo "=========================================="
     fi
