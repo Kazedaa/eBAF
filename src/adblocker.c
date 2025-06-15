@@ -1,156 +1,132 @@
-// This is the userspace part of our program
+// This is the userspace part of our program. It loads an eBPF (extended Berkeley Packet Filter)
+// program into the kernel to block unwanted IPs. It also performs domain resolution, tracks statistics,
+// and attaches the XDP (Express Data Path) program to a network interface for high-speed packet processing.
 
-#include <stdio.h>              // Standard I/O functions
-#include <stdlib.h>             // Standard library functions
-#include <string.h>             // String manipulation functions
-#include <errno.h>              // Error codes
-#include <unistd.h>             // UNIX standard functions
-#include <signal.h>             // Signal handling
-#include <net/if.h>             // Network interface functions
-#include <linux/if_link.h>      // Network interface constants
-#include <sys/socket.h>         // Socket definitions
-#include <netinet/in.h>         // Internet address family
-#include <arpa/inet.h>          // IP manipulation functions
-#include <netdb.h>              // Network database functions
-#include <libgen.h>             // Pathname manipulation functions
-#include <sys/resource.h>       // For setrlimit
-#include <time.h>               // For time tracking
-#include <pthread.h>
-#include <stdbool.h>
-
-#include <bpf/libbpf.h>         // libbpf functions for loading eBPF programs
-#include <bpf/bpf.h>            // Core eBPF userspace functions
-
-#include "adblocker.h"          // Our header with constants
-#include "ip_blacklist.h"       // Pre-resolved IP blacklist
-#include "domain_store.h"
-
-// Global variables to maintain program state
-static int ifindex;             // Network interface index
-static struct bpf_object *obj;  // Our loaded eBPF object
-static int blacklist_ip_map_fd; // File descriptor for the IP blacklist map
-static int stats_map_fd;        // File descriptor for the statistics map
-static time_t start_time;       // When the program started
-
-static pthread_t resolver_thread;
-static volatile bool running = true;
-static int total_blocked_ips = 0;  // Keep track of total IPs for change detection
-
-// Function to print all blocked IP addresses currently in the map
-static void print_ips(void) {
-    // Create a temporary socket for network functions
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
-        perror("socket");
-        return;
-    }
+/*
+    Header files inclusion:
+    - stdio.h: for input/output functions e.g., printf().
+    - stdlib.h: for general functions such as memory allocation and process control.
+    - string.h: for string manipulation functions.
+    - errno.h: for referring to the error codes.
+    - unistd.h: for POSIX functions such as sleep() and close().
+    - signal.h: for setting up signal handlers to catch signals like SIGINT.
+    - net/if.h: for network interface functions.
+    - linux/if_link.h: for constants related to network interfaces.
+    - sys/socket.h: for socket functions.
+    - netinet/in.h: for Internet address family definitions.
+    - arpa/inet.h: for IP address manipulation functions.
+    - netdb.h: for network database operations.
+    - libgen.h: for pathname manipulation functions.
+    - sys/resource.h: for setting resource limits (like RLIMIT_MEMLOCK).
+    - time.h: for time-related functions.
+    - pthread.h: for working with POSIX threads.
+    - stdbool.h: for boolean type and values true/false.
     
-    // Variables for map iteration
-    __u32 key, next_key;
-    __u8 value;
-    int count = 0;
+    The bpf headers come from libbpf, used for loading and managing eBPF programs.
     
-    // Start iterating through the map entries
-    if (bpf_map_get_next_key(blacklist_ip_map_fd, NULL, &key) == 0) {
-        do {
-            // Get the value for the current key
-            if (bpf_map_lookup_elem(blacklist_ip_map_fd, &key, &value) == 0) {
-                count++;
-            }
-        // Move to next key until we've gone through all entries
-        } while (bpf_map_get_next_key(blacklist_ip_map_fd, &key, &next_key) == 0 && 
-                (key = next_key));
-    }
-    
-    printf("Total blocked IPs: %d\n", count);
-    close(sock);
-}
+    The custom header files "adblocker.h", "ip_blacklist.h", and "domain_store.h" define program-specific constants,
+    IP lists, and domain storage/resolution functions.
+*/
 
-// Function to get current statistics
+#include <stdio.h>              // Standard I/O functions (e.g., printf, fprintf)
+#include <stdlib.h>             // Standard library functions (e.g., exit)
+#include <string.h>             // String manipulation functions (e.g., strcmp, strcpy)
+#include <errno.h>              // Provides the errno macro and error codes
+#include <unistd.h>             // Provides access to POSIX functions (e.g., sleep, close)
+#include <signal.h>             // For creating signal handlers (e.g., SIGINT)
+#include <net/if.h>             // Network interface functions (e.g., if_nametoindex)
+#include <linux/if_link.h>      // Network interface constants used by XDP
+#include <sys/socket.h>         // Socket definitions (e.g., socket)
+#include <netinet/in.h>         // Internet address family definitions (e.g., for sockaddr_in)
+#include <arpa/inet.h>          // IP manipulation functions (e.g., htonl)
+#include <netdb.h>              // Network database functions (e.g., for DNS lookup)
+#include <libgen.h>             // To use dirname() for path manipulation
+#include <sys/resource.h>       // For setrlimit, which is used to change resource limits (e.g., RLIMIT_MEMLOCK)
+#include <time.h>               // For tracking time and formatting timestamps
+#include <pthread.h>            // For multithreading (e.g., pthread_create, pthread_join)
+#include <stdbool.h>            // For using bool, true, and false
+
+#include <bpf/libbpf.h>         // For loading eBPF programs into the kernel using libbpf
+#include <bpf/bpf.h>            // For core eBPF operations (e.g., bpf_map_update_elem)
+
+#include "adblocker.h"          // Custom header for constants used in the ad blocker
+#include "ip_blacklist.h"       // Header that holds the list of blacklisted IP addresses
+#include "domain_store.h"       // Header for domain store handling and resolution
+
+// Global variables to maintain the state of the program
+
+static int ifindex;             // Index of the network interface (obtained with if_nametoindex)
+static struct bpf_object *obj;  // Pointer to the loaded eBPF object which contains our eBPF programs
+static int blacklist_ip_map_fd; // File descriptor for the eBPF map holding blacklisted IPs
+static int stats_map_fd;        // File descriptor for the eBPF map holding statistics data
+// static time_t start_time;       // Stores the time the program started (used for uptime calculation)
+
+static pthread_t resolver_thread;   // Thread for resolving domain names into IPs
+static volatile bool running = true;  // Flag that controls the main loop and thread execution
+
+// Function: get_stats
+// Purpose: Reads the statistics (total packets and blocked packets) from the eBPF stats map
+// __u64: unsigned 64-bit integer used to store large count values
 static void get_stats(__u64 *total, __u64 *blocked) {
     __u32 key;
     
-    // Get total packets count
+    // Retrieve total packets count using STAT_TOTAL constant defined in adblocker.h
+    // bpf_map_lookup_elem() is an eBPF helper that retrieves an element from an eBPF map.
     key = STAT_TOTAL;
     if (bpf_map_lookup_elem(stats_map_fd, &key, total) != 0)
         *total = 0;
     
-    // Get blocked packets count
+    // Retrieve blocked packets count using STAT_BLOCKED constant defined in adblocker.h
+    // This helper allows user space to read statistics maintained by the kernel eBPF program.
     key = STAT_BLOCKED;
     if (bpf_map_lookup_elem(stats_map_fd, &key, blocked) != 0)
         *blocked = 0;
 }
 
-// Function to clean up when the program exits
+// Function: cleanup
+// Purpose: Called when the program receives a termination signal (SIGINT/SIGTERM). It cleans up resources,
+// prints final statistics, detaches the eBPF program, and exits.
+// 'cleanup' parameter: sig - the signal number received.
 static void cleanup(int sig) {
-    (void)sig;  // Mark parameter as used to avoid warning
+    (void)sig;  // Avoids a compiler warning about an unused parameter.
     
-    // Get final statistics
+    // Get final statistics before cleanup.
     __u64 total, blocked;
     get_stats(&total, &blocked);
     
-    // Calculate uptime
-    time_t end_time = time(NULL);
-    double uptime = difftime(end_time, start_time);
+    // Compute program uptime.
+    // time_t end_time = time(NULL);
+    // double uptime = difftime(end_time, start_time); // difftime(): returns difference between two time_t values.
     
-    // Signal resolver thread to stop
+    // Stop the resolver thread.
     running = false;
     
-    printf("\n--- eBAF Statistics ---\n");
-    printf("Uptime: %.1f seconds\n", uptime);
-    printf("Total packets processed: %llu\n", total);
-    printf("Packets blocked: %llu\n", blocked);
-    printf("Blocking rate: %.2f%%\n", (total > 0) ? ((double)blocked / total * 100.0) : 0);
-    
-    printf("Removing XDP program from interface %d\n", ifindex);
-    
-    // Wait for resolver thread to terminate
+    // Wait for resolver thread to finish.
     pthread_join(resolver_thread, NULL);
     
-    // Clean up domain store
+    // Clean up domain store resources.
     domain_store_cleanup();
     
-    // Detach our eBPF program from the network interface
+    // Detach the eBPF/XDP program from the network interface.
+    // bpf_xdp_detach() is an eBPF helper to remove an XDP program attached to an interface.
     bpf_xdp_detach(ifindex, 0, NULL);
-    exit(0);
+    exit(0); // Terminate the program.
 }
 
-// Function to list all available network interfaces
-static void list_interfaces(void) {
-    printf("Available network interfaces:\n");
-    
-    // Use the system's 'ip' command to get interface list
-    FILE *fp = popen("ip -o link show | awk -F': ' '{print $2}'", "r");
-    if (fp == NULL) {
-        printf("  Failed to get interface list\n");
-        return;
-    }
-    
-    // Read and print each interface name
-    char iface[64];
-    while (fgets(iface, sizeof(iface), fp) != NULL) {
-        // Remove newline character
-        iface[strcspn(iface, "\n")] = 0;
-        // Skip the loopback interface
-        if (strcmp(iface, "lo") != 0)
-            printf("  %s\n", iface);
-    }
-    pclose(fp);
-}
-
-// Function to get the default network interface
+// Function: get_default_interface
+// Purpose: Tries to determine the default network interface that has a route to 1.1.1.1
+// Returns a string containing the interface name or NULL if not found.
 static char *get_default_interface(void) {
     static char default_if[IF_NAMESIZE] = {0};
     
-    // Use the same approach as the health check script
-    // Try to find the interface with the default route to the internet
+    // Try to find the interface by checking the route to a public IP (e.g., 1.1.1.1)
     FILE *fp = popen("ip -o route get 1.1.1.1 2>/dev/null | awk '{print $5}'", "r");
     if (fp != NULL) {
         if (fgets(default_if, sizeof(default_if), fp) != NULL) {
-            // Remove newline character
+            // Remove newline character.
             default_if[strcspn(default_if, "\n")] = 0;
             
-            // Skip loopback interface
+            // Ensure the loopback interface is not chosen.
             if (strcmp(default_if, "lo") == 0) {
                 default_if[0] = '\0';
             }
@@ -158,19 +134,18 @@ static char *get_default_interface(void) {
         pclose(fp);
     }
     
-    // If still not found, get the first non-loopback interface
+    // If no default interface was detected, pick the first non-loopback interface.
     if (default_if[0] == '\0') {
         fp = popen("ip -o link show | grep -v 'lo:' | head -n 1 | cut -d: -f2 | tr -d ' '", "r");
         if (fp != NULL) {
             if (fgets(default_if, sizeof(default_if), fp) != NULL) {
-                // Remove newline character
                 default_if[strcspn(default_if, "\n")] = 0;
             }
             pclose(fp);
         }
     }
     
-    // Return NULL if no interface was found
+    // Return NULL if no interface was found.
     if (default_if[0] == '\0') {
         return NULL;
     }
@@ -178,41 +153,43 @@ static char *get_default_interface(void) {
     return default_if;
 }
 
-// Function to find the path to our eBPF object file
+// Function: get_bpf_object_path
+// Purpose: Determines the file path to the eBPF object file (adblocker.bpf.o) using various common locations.
+// Returns a pointer to a string containing the path if found; otherwise returns NULL.
+// access(): checks the existence of the file with the given path.
 static char *get_bpf_object_path(const char *progname) {
     static char path[256];
     
-    // Try different possible locations for the eBPF object file
-    // First, try in current directory
+    // Check current directory.
     if (access("./adblocker.bpf.o", F_OK) != -1) {
         snprintf(path, sizeof(path), "./adblocker.bpf.o");
         return path;
     }
     
-    // Try in bin directory
+    // Check bin directory.
     if (access("./bin/adblocker.bpf.o", F_OK) != -1) {
         snprintf(path, sizeof(path), "./bin/adblocker.bpf.o");
         return path;
     }
     
-    // Try in obj directory
+    // Check obj directory.
     if (access("./obj/adblocker.bpf.o", F_OK) != -1) {
         snprintf(path, sizeof(path), "./obj/adblocker.bpf.o");
         return path;
     }
     
-    // Try in parent directory
+    // Check parent directory relative to the program's own path.
     char *dir = dirname(strdup(progname));
     snprintf(path, sizeof(path), "%s/../obj/adblocker.bpf.o", dir);
     if (access(path, F_OK) != -1)
         return path;
     
-    // Try in same directory as program
+    // Check in the same directory as the program.
     snprintf(path, sizeof(path), "%s/adblocker.bpf.o", dir);
     if (access(path, F_OK) != -1)
         return path;
     
-    // Try standard installation location
+    // Standard installation locations.
     snprintf(path, sizeof(path), "/usr/local/bin/adblocker.bpf.o");
     if (access(path, F_OK) != -1)
         return path;
@@ -221,229 +198,195 @@ static char *get_bpf_object_path(const char *progname) {
     if (access(path, F_OK) != -1)
         return path;
     
-    // Could not find the object file
+    // If the file is not found.
     return NULL;
 }
 
-// Function to increase RLIMIT_MEMLOCK to allow eBPF maps to be created
+// Function: increase_memlock_limit
+// Purpose: Increases the RLIMIT_MEMLOCK limit to allow creation of eBPF maps which require non-swappable memory.
+// RLIMIT_MEMLOCK: sets the maximum amount of memory that may be locked into RAM.
 static void increase_memlock_limit(void) {
     struct rlimit rlim = {
         .rlim_cur = RLIM_INFINITY,
         .rlim_max = RLIM_INFINITY
     };
     
+    // setrlimit(): sets resource limits for the process.
     if (setrlimit(RLIMIT_MEMLOCK, &rlim)) {
-        fprintf(stderr, "Warning: Failed to increase RLIMIT_MEMLOCK limit: %s\n", 
-                strerror(errno));
-        fprintf(stderr, "You may need to run with sudo or use the wrapper script\n");
+        // Failed to set memory lock limit
     }
 }
 
-// Function to load IP blacklist into the map from C directly
+// Function: load_ip_blacklist
+// Purpose: Loads a static IP blacklist (provided by ip_blacklist.h) into the eBPF map so that the kernel program
+// can inspect it for blocking network traffic.
 static void load_ip_blacklist(void) {
     int count = 0;
-    __u8 value = 1;
+    __u8 value = 1;  // The value used to indicate a blocked IP.
     
     printf("Loading IP blacklist into filter...\n");
     
-    // Update the map directly from userspace
+    // Loop through the static blacklisted_ips array defined in ip_blacklist.h.
     for (int i = 0; i < BLACKLIST_SIZE; i++) {
-        __u32 ip = htonl(blacklisted_ips[i]);  // Convert to network byte order
+        // htonl(): converts an unsigned integer from host to network byte order.
+        __u32 ip = htonl(blacklisted_ips[i]);  
+        // bpf_map_update_elem() is an eBPF helper that updates an element in an eBPF map.
         if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
             count++;
         }
     }
 }
 
-// Add this function to initialize the original blacklist and domain store
-static void process_blacklist_file(const char *filename) {
-    FILE *fp;
-    char line[DOMAIN_MAX_SIZE];
-    int count = 0;
-    
-    // Initialize domain store
-    domain_store_init();
-    
-    fp = fopen(filename, "r");
-    if (fp == NULL) {
-        fprintf(stderr, "Warning: Could not open blacklist file: %s\n", filename);
-        return;
-    }
-    
-    while (fgets(line, sizeof(line), fp)) {
-        // Remove trailing newline
-        line[strcspn(line, "\r\n")] = 0;
-        
-        // Skip comments and empty lines
-        if (line[0] == '\0' || line[0] == '#')
-            continue;
-        
-        // Add to domain store for periodic resolution
-        if (domain_store_add(line) == 0) {
-            count++;
-        }
-    }
-    
-    fclose(fp);
-    printf("Added %d domains to periodic resolution list\n", count);
-}
-
-// Modify the resolver thread function
+// Function: resolver_thread_func
+// Purpose: Runs in a background thread. It is responsible for resolving domain names into IP addresses and updating
+// the eBPF map with these IPs. It also prints updates when new IPs are detected.
 static void *resolver_thread_func(void *data) {
-    int *map_fd = (int *)data;
-    
-    printf("Background resolver thread started\n");
-    
+    int *map_fd = (int *)data;    
     while (running) {
-        // Resolve all domains and update the blacklist map
-        int resolved = domain_store_resolve_all(*map_fd);
+        // Initialize the domain store if it hasn't been already.
+        if (domain_store_get_count() == 0) {
+            domain_store_init();
+        }
         
-        // Count current IPs in the map
+        // Resolve all domains and update the blacklist map with any new IPs.
+        domain_store_resolve_all(*map_fd);
+        
+        // Count current IPs present in the eBPF map.
         __u32 key, next_key;
         __u8 value;
-        int current_ip_count = 0;
         
         if (bpf_map_get_next_key(*map_fd, NULL, &key) == 0) {
             do {
                 if (bpf_map_lookup_elem(*map_fd, &key, &value) == 0) {
-                    current_ip_count++;
                 }
             } while (bpf_map_get_next_key(*map_fd, &key, &next_key) == 0 && (key = next_key));
         }
         
-        // Only log if there are new IPs found
-        if (current_ip_count > total_blocked_ips) {
-            time_t now = time(NULL);
-            struct tm *tm_info = localtime(&now);
-            char time_str[26];
-            strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
-            
-            int new_ips = current_ip_count - total_blocked_ips;
-            printf("[%s] Found %d new IP addresses, total blocked IPs: %d\n", 
-                   time_str, new_ips, current_ip_count);
-                   
-            // Update our stored count
-            total_blocked_ips = current_ip_count;
-        }
-        
-        // Sleep for RESOLUTION_INTERVAL_SEC seconds
+        // Sleep in intervals of 1 second for RESOLUTION_INTERVAL_SEC seconds.
         for (int i = 0; i < RESOLUTION_INTERVAL_SEC && running; i++) {
-            sleep(1);
+            sleep(1);  // sleep(): suspends execution for the given number of seconds.
         }
     }
     
-    printf("Background resolver thread stopped\n");
     return NULL;
 }
 
-// Main program
+// Function: write_stats_to_file
+// Purpose: Writes current statistics (total packets and blocked packets) to a temporary file. This file can be read by
+// a dashboard to display live stats.
+static void write_stats_to_file() {
+    __u64 total, blocked;
+    get_stats(&total, &blocked);
+    
+    FILE *fp = fopen("/tmp/ebaf-stats.dat", "w");  // fopen(): opens a file for writing.
+    if (fp) {
+        fprintf(fp, "total: %llu\nblocked: %llu\n", total, blocked);
+        fclose(fp);  // fclose(): closes the file pointer.
+    }
+}
+
+// Main program: Entry point for the ad blocker
 int main(int argc, char **argv) {
     const char *ifname = NULL;
     
-    // Check command line arguments
+    // Check command line arguments.
     if (argc > 2) {
-        fprintf(stderr, "Usage: %s [interface]\n", argv[0]);
-        fprintf(stderr, "If no interface is specified, the default route interface will be used.\n");
-        fprintf(stderr, "\n");
-        list_interfaces();
+        // More than one argument provided
         return 1;
     } else if (argc == 2) {
-        // Interface specified on command line
+        // If interface is specified as an argument, use that.
         ifname = argv[1];
     } else {
-        // No interface specified, use default
+        // Otherwise, try to determine the default interface.
         ifname = get_default_interface();
         
         if (!ifname) {
-            fprintf(stderr, "Error: Could not determine default network interface\n");
-            fprintf(stderr, "Please specify an interface manually:\n");
-            list_interfaces();
+            // Could not determine a default interface.
             return 1;
         }
         
-        printf("Using default network interface: %s\n", ifname);
     }
 
-    // Record start time
-    start_time = time(NULL);
+    // Record the start time for uptime calculations.
+    // start_time = time(NULL);
     
-    // Convert interface name to interface index
-    ifindex = if_nametoindex(ifname);
+    // Convert the interface name to its index.
+    ifindex = if_nametoindex(ifname); // if_nametoindex(): returns the index of a network interface given its name.
     if (ifindex == 0) {
-        fprintf(stderr, "Invalid interface: %s\n", ifname);
-        fprintf(stderr, "\n");
-        list_interfaces();
+        // Invalid interface name or interface does not exist.
         return 1;
     }
 
-    // Increase the RLIMIT_MEMLOCK limit
+    // Increase memory lock limit to support eBPF map creation.
     increase_memlock_limit();
     
-    // Load our eBPF program
+    // Finds eBPF program object file path.
+    // get_bpf_object_path() locates the compiled eBPF object file (.bpf.o). This file contains the eBPF bytecode,
+    // maps definitions, and sections required by the kernel.
     char *bpf_obj_path = get_bpf_object_path(argv[0]);
     if (!bpf_obj_path) {
-        fprintf(stderr, "Failed to find adblocker.bpf.o file. Make sure to run 'make' first.\n");
+        // Failed to find the eBPF object file.
         return 1;
     }
-    
-    printf("Loading BPF program...\n");
-    
-    // Open the eBPF object file
+        
+    // Open the eBPF object file using libbpf.
+    // bpf_object__open_file() loads the BPF object file into memory and prepares it for verification and loading.
     obj = bpf_object__open_file(bpf_obj_path, NULL);
     if (libbpf_get_error(obj)) {
-        fprintf(stderr, "Failed to open BPF object file\n");
+        // Failed to open the eBPF object file.
         return 1;
     }
     
-    // Load the eBPF program into the kernel
+    // Load the eBPF program into the kernel.
+    // bpf_object__load() triggers verification and loads the eBPF programs defined in the object file into the kernel.
     if (bpf_object__load(obj)) {
-        fprintf(stderr, "Failed to load BPF program\n");
+        // Failed to load BPF program
         return 1;
     }
     
-    // Find our specific XDP program within the object
+    // Find the specific XDP program by name from the eBPF object.
+    // bpf_object__find_program_by_name() searches for the eBPF program (xdp_blocker) using its section name.
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "xdp_blocker");
     if (!prog) {
-        fprintf(stderr, "Failed to find XDP program\n");
+        // Failed to find XDP program
         return 1;
     }
     
-    int prog_fd = bpf_program__fd(prog);
+    int prog_fd = bpf_program__fd(prog); // bpf_program__fd() returns a file descriptor referencing the loaded program.
     
-    // Get file descriptors for our eBPF maps
+    // Retrieve file descriptors for the eBPF maps.
+    // bpf_object__find_map_by_name() locates maps within the BPF object by their names.
     struct bpf_map *blacklist_ip_map = bpf_object__find_map_by_name(obj, "blacklist_ip_map");
     struct bpf_map *stats_map = bpf_object__find_map_by_name(obj, "stats_map");
     
     if (!blacklist_ip_map || !stats_map) {
-        fprintf(stderr, "Failed to find BPF maps\n");
+        // Failed to find BPF maps
         return 1;
     }
     
     blacklist_ip_map_fd = bpf_map__fd(blacklist_ip_map);
     stats_map_fd = bpf_map__fd(stats_map);
     
-    // Initialize statistics counters
+    // Initialize statistics counters in the stats map.
     __u32 key;
     __u64 value = 0;
     
     key = STAT_TOTAL;
+    // bpf_map_update_elem() updates an entry in an eBPF map. This call initializes the total packets counter.
     bpf_map_update_elem(stats_map_fd, &key, &value, BPF_ANY);
     
     key = STAT_BLOCKED;
+    // This initializes the blocked packets counter.
     bpf_map_update_elem(stats_map_fd, &key, &value, BPF_ANY);
     
-    // Load the IP blacklist directly from userspace
+    // Load the static IP blacklist into the eBPF map.
     load_ip_blacklist();
     
-    // Display the list of blocked IPs
-    print_ips();
-    
-    // Define different XDP attachment modes to try
-    // These modes affect performance and compatibility
+    // Define various XDP attachment modes to try (different performance/compatibility trade-offs).
     int xdp_flags[] = {
-        XDP_FLAGS_DRV_MODE,    // Native mode (fastest)
-        XDP_FLAGS_SKB_MODE,    // Generic mode (most compatible)
-        0                      // Default mode
+        XDP_FLAGS_DRV_MODE,    // Native mode: best performance on supporting hardware.
+        XDP_FLAGS_SKB_MODE,    // Generic mode: most compatible.
+        0                      // Default mode.
     };
     
     const char *mode_names[] = {
@@ -452,45 +395,56 @@ int main(int argc, char **argv) {
         "default"
     };
     
-    // Try to attach our program in different modes
+    // Attempt to attach the XDP program in different modes.
     int attached = 0;
     for (int i = 0; i < 3; i++) {
         printf("Trying XDP %s mode...\n", mode_names[i]);
         
+        // bpf_xdp_attach() is an eBPF helper that attaches an XDP program to a network interface.
         if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags[i], NULL) == 0) {
-            printf("Successfully attached XDP program in %s mode\n", mode_names[i]);
             attached = 1;
             break;
         }
         
-        // Print error only if it's not "Operation not supported"
+        // Print error if the failure is not due to unsupported operation.
         if (errno != EOPNOTSUPP) {
             perror("XDP attach");
         }
     }
     
-    if (!attached) {
-        fprintf(stderr, "Error: Could not attach XDP program to interface\n");
+    if (!attached){
+        //Could not attach XDP program to interface
         return 1;
     }
     
-    // Start domain resolution thread
+    // Start the background thread for resolving domains into IP addresses.
     if (pthread_create(&resolver_thread, NULL, resolver_thread_func, &blacklist_ip_map_fd) != 0) {
-        fprintf(stderr, "Failed to start resolver thread\n");
+        // Failed to start resolver thread
         return 1;
     }
     
-    printf("\nAd blocker is running with dynamic domain resolution.\n");
-    printf("Press Ctrl+C to stop and view statistics.\n");
-    
-    // Set up signal handler for graceful exit
+    // Set up signal handlers for graceful shutdown on SIGINT and SIGTERM.
     signal(SIGINT, cleanup);
     signal(SIGTERM, cleanup);
-    
-    // Main loop: just keep the program running
-    while (1) {
+        
+    time_t last_stats_write = 0;
+    while (running) {
         sleep(1);
+        time_t now = time(NULL);
+        if (now - last_stats_write >= 2) {
+            write_stats_to_file();
+            last_stats_write = now;
+        }
     }
+    
+    // Remove XDP program from the interface if the loop exits.
+    bpf_xdp_detach(ifindex, 0, NULL);
+    
+    // Wait for the background resolver thread to finish.
+    pthread_join(resolver_thread, NULL);
+    
+    // Clean up domain store before exit.
+    domain_store_cleanup();
     
     return 0;
 }

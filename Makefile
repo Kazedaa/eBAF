@@ -26,10 +26,9 @@ endif
 
 OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 
-# Default blacklist file (can be overridden with BLACKLIST=path/to/file make option)
 BLACKLIST ?= spotify-stable
 
-all: directories $(TARGET) wrapper health-check
+all: directories $(TARGET) ebaf ebaf-health ebaf-dash ebaf-cleanup
 
 directories:
 	mkdir -p $(OBJ_DIR)
@@ -52,41 +51,52 @@ clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 	rm -f $(SRC_DIR)/ip_blacklist.h $(SRC_DIR)/ip_blacklist.c
 
-install: all
-	sudo mkdir -p /usr/local/bin
-	sudo mkdir -p /usr/local/share/ebaf
-	sudo cp $(TARGET) /usr/local/bin/
-	sudo cp $(BIN_DIR)/*.bpf.o /usr/local/share/ebaf/
-	sudo cp $(BIN_DIR)/run-adblocker.sh /usr/local/bin/ebaf
-	sudo cp $(BIN_DIR)/health-check.sh /usr/local/bin/ebaf-check
-	@echo "Installed to /usr/local/bin/ebaf"
-	@echo "Run with: sudo ebaf <interface>"
-	@echo "Health check: sudo ebaf-check"
+# Create the main ebaf script
+ebaf: directories
+	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf
+	@echo '# eBPF Ad Blocker Firewall (eBAF) - Main Command' >> $(BIN_DIR)/ebaf
+	@echo '' >> $(BIN_DIR)/ebaf
+	@cat $(SRC_DIR)/ebaf.sh >> $(BIN_DIR)/ebaf
+	@chmod +x $(BIN_DIR)/ebaf
 
-# Add uninstall target to remove all installed components
+
+# Create the health check script
+ebaf-health: directories
+	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf-health
+	@echo '# eBPF Ad Blocker Firewall (eBAF) - Health Check' >> $(BIN_DIR)/ebaf-health
+	@echo '' >> $(BIN_DIR)/ebaf-health
+	@cat $(SRC_DIR)/health_check.sh >> $(BIN_DIR)/ebaf-health
+	@chmod +x $(BIN_DIR)/ebaf-health
+
+# Create cleanup script
+ebaf-cleanup: directories
+	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf-cleanup
+	@echo '# eBAF Cleanup Utility' >> $(BIN_DIR)/ebaf-cleanup
+	@echo '' >> $(BIN_DIR)/ebaf-cleanup
+	@cat $(SRC_DIR)/ebaf_cleanup.sh >> $(BIN_DIR)/ebaf-cleanup
+	@chmod +x $(BIN_DIR)/ebaf-cleanup
+
+install: all
+	@echo "Installing eBAF..."
+	@sudo mkdir -p /usr/local/share/ebaf
+	@sudo cp $(BIN_DIR)/adblocker /usr/local/bin/
+	@sudo cp $(BIN_DIR)/adblocker.bpf.o /usr/local/share/ebaf/
+	@sudo cp $(BIN_DIR)/ebaf /usr/local/bin/
+	@sudo cp $(BIN_DIR)/ebaf-health /usr/local/bin/
+	@sudo cp $(BIN_DIR)/ebaf-dash /usr/local/bin/
+	@sudo cp $(BIN_DIR)/ebaf-cleanup /usr/local/bin/
+	@sudo cp $(BIN_DIR)/ebaf_dash.py /usr/local/share/ebaf/
+	@echo "eBAF has been installed successfully."
+
 uninstall:
 	@echo "Uninstalling eBAF..."
-	@if [ -f /usr/local/bin/adblocker ]; then \
-		sudo rm -f /usr/local/bin/adblocker; \
-		echo "Removed /usr/local/bin/adblocker"; \
-	fi
-	@if [ -f /usr/local/bin/ebaf ]; then \
-		sudo rm -f /usr/local/bin/ebaf; \
-		echo "Removed /usr/local/bin/ebaf"; \
-	fi
-	@if [ -f /usr/local/bin/ebaf-check ]; then \
-		sudo rm -f /usr/local/bin/ebaf-check; \
-		echo "Removed /usr/local/bin/ebaf-check"; \
-	fi
-	@if [ -d /usr/local/share/ebaf ]; then \
-		sudo rm -rf /usr/local/share/ebaf; \
-		echo "Removed /usr/local/share/ebaf"; \
-	fi
+	@sudo rm -f /usr/local/bin/adblocker /usr/local/bin/ebaf /usr/local/bin/ebaf-health /usr/local/bin/ebaf-dash /usr/local/bin/ebaf-cleanup
+	@sudo rm -rf /usr/local/share/ebaf
 	@echo "eBAF has been uninstalled successfully."
 
 find-interface:
+	@echo "Available network interfaces:"
 	@ip -o link show | grep -v "lo:" | cut -d':' -f2 | tr -d ' ' | sed 's/^/  /'
-	@echo "Use the interface name as parameter, e.g.: sudo ./bin/run-adblocker.sh wlan0"
 
 test-blacklist: directories
 	@echo "Creating test blacklist..."
@@ -97,42 +107,6 @@ test-blacklist: directories
 	@make BLACKLIST=/tmp/test-ip-blacklist.txt
 	@echo "Built with test blacklist"
 
-# Create a health check script
-health-check:
-	@cp $(SRC_DIR)/health_check.sh $(BIN_DIR)/health-check.sh
-	@chmod +x $(BIN_DIR)/health-check.sh
-	@echo "Created health check script at $(BIN_DIR)/health-check.sh"
-	@echo "Run with: sudo ./bin/health-check.sh"
-
-# Create a wrapper script that increases RLIMIT_MEMLOCK before running
-wrapper:
-	@echo '#!/bin/bash' > $(BIN_DIR)/run-adblocker.sh
-	@echo '# eBPF Ad Blocker Firewall (eBAF)' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'if [ "$${EUID}" -ne 0 ]; then' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '  echo "This program requires root privileges. Please run with sudo."' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '  exit 1' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'fi' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '# Increase memory lock limit for eBPF maps' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'ulimit -l unlimited' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '# Find the adblocker binary' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'if [ -f "$${SCRIPT_DIR}/adblocker" ]; then' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '  ADBLOCKER="$${SCRIPT_DIR}/adblocker"' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'elif [ -f "/usr/local/bin/adblocker" ]; then' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '  ADBLOCKER="/usr/local/bin/adblocker"' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'else' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '  echo "Error: Could not find adblocker binary"' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '  exit 1' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'fi' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '' >> $(BIN_DIR)/run-adblocker.sh
-	@echo '# Execute the adblocker with all passed arguments' >> $(BIN_DIR)/run-adblocker.sh
-	@echo 'exec "$${ADBLOCKER}" "$$@"' >> $(BIN_DIR)/run-adblocker.sh
-	@chmod +x $(BIN_DIR)/run-adblocker.sh
-
-# Add a help target to explain usage
 help:
 	@echo "eBPF Ad Blocker Firewall (eBAF)"
 	@echo ""
@@ -140,26 +114,15 @@ help:
 	@echo "  make                       - Build with default blacklist (spotify-stable)"
 	@echo "  make BLACKLIST=file.txt    - Build with custom blacklist file"
 	@echo "  make test-blacklist        - Build with a small test blacklist"
-	@echo "  make dynamic-blacklist     - Build with dynamic domain resolution"
 	@echo ""
-	@echo "Usage commands:"
-	@echo "  make install               - Install to system"
-	@echo "  make uninstall             - Remove from system"
-	@echo "  make clean                 - Clean build files"
-	@echo "  make find-interface        - Show available network interfaces"
-	@echo "  make help                  - Show this help message"
+	@echo "Installation:"
+	@echo "  sudo make install          - Install eBAF system-wide"
+	@echo "  sudo make uninstall        - Remove eBAF from system"
 	@echo ""
-	@echo "After building, run with:"
-	@echo "  sudo ./bin/adblocker       - Run using default network interface"
-	@echo "  sudo ./bin/adblocker eth0  - Run on specific interface"
-	@echo "  sudo ./bin/run-adblocker.sh      - Run on ALL active interfaces"
-	@echo "  sudo ./bin/run-adblocker.sh -d   - Run only on default interface"
-	@echo "  ./bin/health-check.sh            - Run health check"
+	@echo "Usage:"
+	@echo "  sudo ebaf                  - Run on default interface"
+	@echo "  sudo ebaf -a               - Run on all interfaces"
+	@echo "  sudo ebaf-health           - Run health check"
 	@echo ""
-	@echo "After installing, run with:"
-	@echo "  sudo adblocker            - Run using default interface"
-	@echo "  sudo ebaf                 - Run on ALL active interfaces"
-	@echo "  sudo ebaf -d              - Run only on default interface"
-	@echo "  sudo ebaf-check           - Run health check"
 
-.PHONY: all directories clean install uninstall find-interface test-blacklist wrapper help health-check dynamic-blacklist
+.PHONY: all directories clean install uninstall find-interface test-blacklist help ebaf ebaf-health ebaf-dash
