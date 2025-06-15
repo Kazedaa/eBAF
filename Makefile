@@ -1,3 +1,9 @@
+# eBAF - eBPF Ad Blocker Firewall
+# Simple Makefile with essential targets only
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
 CC = gcc
 CLANG = clang
 STRIP = strip
@@ -8,6 +14,9 @@ BIN_DIR = bin
 
 TARGET = $(BIN_DIR)/adblocker
 SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/domain_store.c
+
+INSTALL_BIN = /usr/local/bin
+INSTALL_SHARE = /usr/local/share/ebaf
 
 CFLAGS = -Wall -O2
 BPF_CFLAGS = -O2 -g -target bpf -I$(LIBBPF_HEADERS) -c
@@ -28,8 +37,11 @@ OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 
 BLACKLIST ?= spotify-stable
 
-all: directories $(TARGET) ebaf ebaf-health ebaf-dash ebaf-cleanup
+# =============================================================================
+# BUILD TARGETS
+# =============================================================================
 
+all: directories $(TARGET) ebaf ebaf-health ebaf-dash
 directories:
 	mkdir -p $(OBJ_DIR)
 	mkdir -p $(BIN_DIR)
@@ -47,10 +59,6 @@ $(TARGET): $(SOURCES) $(SRC_DIR)/adblocker.h $(OBJECTS) $(SRC_DIR)/ip_blacklist.
 	$(CC) $(CFLAGS) -I$(LIBBPF_HEADERS) $(SOURCES) $(LDFLAGS) -o $@
 	cp $(OBJ_DIR)/adblocker.bpf.o $(BIN_DIR)/
 
-clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR)
-	rm -f $(SRC_DIR)/ip_blacklist.h $(SRC_DIR)/ip_blacklist.c
-
 # Create the main ebaf script
 ebaf: directories
 	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf
@@ -59,70 +67,94 @@ ebaf: directories
 	@cat $(SRC_DIR)/ebaf.sh >> $(BIN_DIR)/ebaf
 	@chmod +x $(BIN_DIR)/ebaf
 
-
 # Create the health check script
 ebaf-health: directories
 	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf-health
 	@echo '# eBPF Ad Blocker Firewall (eBAF) - Health Check' >> $(BIN_DIR)/ebaf-health
 	@echo '' >> $(BIN_DIR)/ebaf-health
-	@cat $(SRC_DIR)/health_check.sh >> $(BIN_DIR)/ebaf-health
+	@cat $(SRC_DIR)/ebaf-health.sh >> $(BIN_DIR)/ebaf-health
 	@chmod +x $(BIN_DIR)/ebaf-health
 
-# Create cleanup script
-ebaf-cleanup: directories
-	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf-cleanup
-	@echo '# eBAF Cleanup Utility' >> $(BIN_DIR)/ebaf-cleanup
-	@echo '' >> $(BIN_DIR)/ebaf-cleanup
-	@cat $(SRC_DIR)/ebaf_cleanup.sh >> $(BIN_DIR)/ebaf-cleanup
-	@chmod +x $(BIN_DIR)/ebaf-cleanup
+ebaf-dash: directories
+	@cp $(SRC_DIR)/ebaf_dash.py $(BIN_DIR)/
 
+# =============================================================================
+# INSTALLATION TARGETS
+# =============================================================================
+
+# Install system-wide and clean project directory
 install: all
-	@echo "Installing eBAF..."
-	@sudo mkdir -p /usr/local/share/ebaf
-	@sudo cp $(BIN_DIR)/adblocker /usr/local/bin/
-	@sudo cp $(BIN_DIR)/adblocker.bpf.o /usr/local/share/ebaf/
-	@sudo cp $(BIN_DIR)/ebaf /usr/local/bin/
-	@sudo cp $(BIN_DIR)/ebaf-health /usr/local/bin/
-	@sudo cp $(BIN_DIR)/ebaf-dash /usr/local/bin/
-	@sudo cp $(BIN_DIR)/ebaf-cleanup /usr/local/bin/
-	@sudo cp $(BIN_DIR)/ebaf_dash.py /usr/local/share/ebaf/
-	@echo "eBAF has been installed successfully."
+	@echo "Installing eBAF system-wide..."
+	@sudo mkdir -p $(INSTALL_BIN) $(INSTALL_SHARE)
+	@sudo cp $(BIN_DIR)/adblocker $(INSTALL_BIN)/
+	@sudo cp $(BIN_DIR)/adblocker.bpf.o $(INSTALL_SHARE)/
+	@sudo cp $(BIN_DIR)/ebaf $(INSTALL_BIN)/
+	@sudo cp src/ebaf_dash.py $(INSTALL_SHARE)/
+	@sudo cp $(BIN_DIR)/ebaf-health $(INSTALL_BIN)/
+	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_SHARE)/
+	@$(MAKE) clean
+	@echo ""
+	@echo "Installation complete!"
+	@echo "Usage: sudo ebaf [--dash] [interface]"
+	@echo "Health check: sudo ebaf-health"
 
+# Remove installed files
 uninstall:
 	@echo "Uninstalling eBAF..."
-	@sudo rm -f /usr/local/bin/adblocker /usr/local/bin/ebaf /usr/local/bin/ebaf-health /usr/local/bin/ebaf-dash /usr/local/bin/ebaf-cleanup
-	@sudo rm -rf /usr/local/share/ebaf
-	@echo "eBAF has been uninstalled successfully."
+	sudo rm -f $(INSTALL_BIN)/adblocker $(INSTALL_BIN)/ebaf $(INSTALL_BIN)/ebaf-health
+	sudo rm -f $(INSTALL_SHARE)/adblocker.bpf.o
+	sudo rm -f $(INSTALL_SHARE)/ebaf_dash.py
+	sudo rm -rf $(INSTALL_SHARE)
+	sudo rm -f /tmp/ebaf-*
+	@echo "Uninstall complete. You can go ahead and delete the project directory if you wish."
 
-find-interface:
-	@echo "Available network interfaces:"
-	@ip -o link show | grep -v "lo:" | cut -d':' -f2 | tr -d ' ' | sed 's/^/  /'
+# =============================================================================
+# CLEANUP TARGETS
+# =============================================================================
 
-test-blacklist: directories
-	@echo "Creating test blacklist..."
-	@echo "# Test blacklist" > /tmp/test-ip-blacklist.txt
-	@echo "1.1.1.1" >> /tmp/test-ip-blacklist.txt
-	@echo "8.8.8.8" >> /tmp/test-ip-blacklist.txt
-	@echo "google.com" >> /tmp/test-ip-blacklist.txt
-	@make BLACKLIST=/tmp/test-ip-blacklist.txt
-	@echo "Built with test blacklist"
+# Remove all build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -rf $(OBJ_DIR) $(BIN_DIR)
+	rm -f src/ip_blacklist.c src/ip_blacklist.h
+	sudo rm -f /tmp/ebaf-*
+	@echo "Clean complete."
 
+# =============================================================================
+# UTILITY TARGETS
+# =============================================================================
+
+# Show help information
 help:
-	@echo "eBPF Ad Blocker Firewall (eBAF)"
+	@echo "eBAF - eBPF Ad Blocker Firewall"
 	@echo ""
-	@echo "Build options:"
-	@echo "  make                       - Build with default blacklist (spotify-stable)"
-	@echo "  make BLACKLIST=file.txt    - Build with custom blacklist file"
-	@echo "  make test-blacklist        - Build with a small test blacklist"
+	@echo "BUILD OPTIONS:"
+	@echo "  make                             Build with default blacklist ($(BLACKLIST))"
+	@echo "  make BLACKLIST=file.txt          Build with custom blacklist file"
+	@echo "  make clean                       Remove all build artifacts"
 	@echo ""
-	@echo "Installation:"
-	@echo "  sudo make install          - Install eBAF system-wide"
-	@echo "  sudo make uninstall        - Remove eBAF from system"
+	@echo "INSTALLATION:"
+	@echo "  make install                     Build and install system-wide, then clean project"
+	@echo "  make install BLACKLIST=file.txt  Build with custom blacklist, install, then clean"
+	@echo "  make uninstall                   Remove all installed files"
 	@echo ""
-	@echo "Usage:"
-	@echo "  sudo ebaf                  - Run on default interface"
-	@echo "  sudo ebaf -a               - Run on all interfaces"
-	@echo "  sudo ebaf-health           - Run health check"
+	@echo "UTILITIES:"
+	@echo "  make help                        Show this help"
+	@echo "  make find-interface              Find available network interfaces"
 	@echo ""
 
-.PHONY: all directories clean install uninstall find-interface test-blacklist help ebaf ebaf-health ebaf-dash
+# Find available network interfaces
+find-interface:
+	@echo "AVAILABLE NETWORK INTERFACES:"
+	@ip -o route get 1.1.1.1 2>/dev/null | awk '{print "-Default Interface: " $$5}' || echo "  Unable to determine default interface"
+	@echo "-All Interfaces"
+	@ip -o link show | sed 's/^[0-9]*: /  /' | cut -d: -f1 | while read iface; do \
+		status=$$(ip link show $$iface | grep -q "state UP" && echo "(UP)" || echo "(DOWN)"); \
+		echo "  $$iface $$status"; \
+	done
+
+# =============================================================================
+# PHONY TARGETS
+# =============================================================================
+
+.PHONY: all install uninstall clean help find-interface
