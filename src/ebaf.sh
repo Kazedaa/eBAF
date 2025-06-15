@@ -17,6 +17,7 @@ DEFAULT_INTERFACE=1            # Flag: run on default interface (default behavio
 SPECIFIED_INTERFACES=()        # Array: user-specified interfaces
 DASHBOARD_PID=""              # PID of the running dashboard process
 ENABLE_DASHBOARD=0            # Flag: whether to start dashboard
+QUIET_MODE=0                  # Flag: suppress output
 
 # Print usage information and exit
 usage() {
@@ -28,10 +29,18 @@ OPTIONS:
   -d, --default           Run only on the default interface (with internet access)
   -i, --interface IFACE   Specify an interface to use
   -D, --dash              Start the web dashboard (http://localhost:8080)
+  -q, --quiet             Suppress output (quiet mode)
   -h, --help              Show this help message
 
 EOF
     exit 1
+}
+
+# Function to handle output based on quiet mode
+output() {
+    if [ $QUIET_MODE -eq 0 ]; then
+        echo "$@"
+    fi
 }
 
 # Root privilege check - eBPF programs require elevated privileges
@@ -73,6 +82,10 @@ while [[ $# -gt 0 ]]; do
             ENABLE_DASHBOARD=1
             shift
             ;;
+        -q|--quiet)
+            QUIET_MODE=1
+            shift
+            ;;
         -h|--help)
             usage
             ;;
@@ -110,23 +123,22 @@ find_adblocker() {
 }
 
 # Function: get_default_interface
-# Purpose: Determine the default network interface (one with internet route)
+# Purpose: Determine the default network interface with internet access
 get_default_interface() {
-    # Try to get interface with route to 1.1.1.1 (Cloudflare DNS)
-    local default_if=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{print $5}')
-    
-    # Fallback: get first non-loopback interface if default route fails
-    if [ -z "$default_if" ] || [ "$default_if" == "lo" ]; then
-        default_if=$(ip -o link show up | grep -v "lo:" | head -n 1 | cut -d: -f2 | tr -d ' ')
+    # Try to get the interface used for the default route
+    local default_route=$(ip route | grep '^default' | head -n1)
+    if [ -n "$default_route" ]; then
+        echo "$default_route" | awk '{print $5}'
+    else
+        # Fallback: get the first non-loopback interface
+        ip -o link show | grep -v "lo:" | head -n1 | cut -d: -f2 | tr -d ' '
     fi
-    
-    echo "$default_if"
 }
 
 # Function: get_active_interfaces
 # Purpose: Get all active network interfaces (excluding loopback)
 get_active_interfaces() {
-    ip -o link show up | grep -v "lo:" | cut -d: -f2 | tr -d ' '
+    ip -o link show | grep 'state UP' | grep -v "lo:" | cut -d: -f2 | tr -d ' '
 }
 
 # Function: start_dashboard
@@ -135,10 +147,10 @@ start_dashboard() {
     local dashboard_script=""
     local port=8080
     
-    echo "Initializing dashboard startup..."
+    output "Initializing dashboard startup..."
     
     # Clean up any existing dashboard processes first
-    echo "Cleaning up existing dashboard processes..."
+    output "Cleaning up existing dashboard processes..."
     pkill -f "ebaf_dash.py" 2>/dev/null
     sleep 2
     
@@ -146,7 +158,7 @@ start_dashboard() {
     if command -v lsof &> /dev/null; then
         local pids=$(lsof -ti:$port 2>/dev/null)
         if [ -n "$pids" ]; then
-            echo "Killing processes on port $port: $pids"
+            output "Killing processes on port $port: $pids"
             kill -9 $pids 2>/dev/null
             sleep 1
         fi
@@ -154,7 +166,7 @@ start_dashboard() {
     
     # Double-check port is free
     if ss -tlnp 2>/dev/null | grep -q ":$port " || netstat -tlnp 2>/dev/null | grep -q ":$port "; then
-        echo "ERROR: Port $port is still in use after cleanup. Cannot start dashboard."
+        output "ERROR: Port $port is still in use after cleanup. Cannot start dashboard."
         return 1
     fi
     
@@ -170,26 +182,28 @@ start_dashboard() {
     for path in "${paths[@]}"; do
         if [ -f "$path" ]; then
             dashboard_script="$path"
-            echo "Found dashboard script: $path"
+            output "Found dashboard script: $path"
             break
         fi
     done
     
     if [ -z "$dashboard_script" ]; then
-        echo "WARNING: Dashboard script not found, skipping web dashboard"
-        echo "Searched paths:"
-        printf "  %s\n" "${paths[@]}"
+        output "WARNING: Dashboard script not found, skipping web dashboard"
+        output "Searched paths:"
+        if [ $QUIET_MODE -eq 0 ]; then
+            printf "  %s\n" "${paths[@]}"
+        fi
         return 1
     fi
     
     # Verify Python3 is available
     if ! command -v python3 &> /dev/null; then
-        echo "WARNING: Python3 not found, skipping web dashboard"
+        output "WARNING: Python3 not found, skipping web dashboard"
         return 1
     fi
     
     # Start dashboard in background with explicit output redirection
-    echo "Starting dashboard on port $port..."
+    output "Starting dashboard on port $port..."
     nohup python3 "$dashboard_script" > /dev/null 2>&1 &
     DASHBOARD_PID=$!
     
@@ -209,16 +223,16 @@ start_dashboard() {
         done
         
         if [ $listening -eq 1 ]; then
-            echo "Dashboard started successfully: http://localhost:$port (PID: $DASHBOARD_PID)"
+            output "Dashboard started successfully: http://localhost:$port (PID: $DASHBOARD_PID)"
             return 0
         else
-            echo "WARNING: Dashboard process started but not listening on port $port"
+            output "WARNING: Dashboard process started but not listening on port $port"
             kill $DASHBOARD_PID 2>/dev/null
             DASHBOARD_PID=""
             return 1
         fi
     else
-        echo "WARNING: Failed to start dashboard process"
+        output "WARNING: Failed to start dashboard process"
         DASHBOARD_PID=""
         return 1
     fi
@@ -226,14 +240,16 @@ start_dashboard() {
 # Function: cleanup
 # Purpose: Gracefully stop all eBAF instances and dashboard on script exit
 cleanup() {
-    echo ""
-    echo "=========================================="
-    echo "Shutting down eBAF..."
-    echo "=========================================="
+    if [ $QUIET_MODE -eq 0 ]; then
+        echo ""
+        echo "=========================================="
+        echo "Shutting down eBAF..."
+        echo "=========================================="
+    fi
     
     # Stop dashboard if it's running
     if [ -n "$DASHBOARD_PID" ]; then
-        echo "Stopping dashboard (PID: $DASHBOARD_PID)..."
+        output "Stopping dashboard (PID: $DASHBOARD_PID)..."
         kill $DASHBOARD_PID 2>/dev/null
         sleep 1
         # Force kill if still running
@@ -241,11 +257,11 @@ cleanup() {
     fi
     
     # Stop all adblocker processes
-    echo "Stopping adblocker processes..."
+    output "Stopping adblocker processes..."
     pkill -f "$(basename "$ADBLOCKER")" 2>/dev/null
     
     # Clean up any remaining dashboard processes
-    echo "Cleaning up dashboard processes..."
+    output "Cleaning up dashboard processes..."
     pkill -f "ebaf_dash.py" 2>/dev/null
     sleep 1
     pkill -9 -f "ebaf_dash.py" 2>/dev/null
@@ -254,7 +270,7 @@ cleanup() {
     if command -v lsof &> /dev/null; then
         local pids=$(lsof -ti:8080 2>/dev/null)
         if [ -n "$pids" ]; then
-            echo "Force killing remaining processes on port 8080..."
+            output "Force killing remaining processes on port 8080..."
             kill -9 $pids 2>/dev/null
         fi
     fi
@@ -262,7 +278,7 @@ cleanup() {
     # Remove any PID files
     rm -f /tmp/ebaf-dashboard.pid 2>/dev/null
     
-    echo "All eBAF instances stopped."
+    output "All eBAF instances stopped."
     exit 0
 }
 
@@ -271,9 +287,11 @@ cleanup() {
 # =============================================================================
 
 # Find the adblocker binary
-echo "=========================================="
-echo "eBAF Initialization"
-echo "=========================================="
+if [ $QUIET_MODE -eq 0 ]; then
+    echo "=========================================="
+    echo "eBAF Initialization"
+    echo "=========================================="
+fi
 
 ADBLOCKER=$(find_adblocker)
 if [ -z "$ADBLOCKER" ]; then
@@ -282,7 +300,7 @@ if [ -z "$ADBLOCKER" ]; then
     exit 1
 fi
 
-echo "Found adblocker: $ADBLOCKER"
+output "Found adblocker: $ADBLOCKER"
 
 # Determine which interfaces to use
 INTERFACES=()
@@ -300,9 +318,11 @@ if [ $DEFAULT_INTERFACE -eq 1 ]; then
         if [[ ! " ${INTERFACES[*]} " =~ " ${default_if} " ]]; then
             INTERFACES+=("$default_if")
         fi
-        echo "Using default interface: $default_if"
+        output "Using default interface: $default_if"
     else
         echo "ERROR: Could not determine default interface."
+        echo "Available interfaces:"
+        ip -o link show | cut -d: -f2 | tr -d ' '
         exit 1
     fi
 fi
@@ -314,19 +334,21 @@ if [ $ALL_INTERFACES -eq 1 ]; then
             INTERFACES+=("$iface")
         fi
     done < <(get_active_interfaces)
-    echo "Using all active interfaces: ${INTERFACES[*]}"
+    output "Using all active interfaces: ${INTERFACES[*]}"
 fi
 
 # Validate interfaces exist
-echo ""
-echo "Validating interfaces..."
+if [ $QUIET_MODE -eq 0 ]; then
+    echo ""
+    echo "Validating interfaces..."
+fi
 valid_interfaces=()
 for iface in "${INTERFACES[@]}"; do
     if ip link show "$iface" &>/dev/null; then
         valid_interfaces+=("$iface")
-        echo "  $iface - Valid"
+        output "  $iface - Valid"
     else
-        echo "  $iface - Interface not found"
+        output "  $iface - Interface not found"
     fi
 done
 
@@ -340,14 +362,21 @@ INTERFACES=("${valid_interfaces[@]}")
 # Set up signal handling for graceful shutdown
 trap cleanup SIGINT SIGTERM
 
+# Check for conflicting options
+if [ $ALL_INTERFACES -eq 1 ] && [ ${#SPECIFIED_INTERFACES[@]} -gt 0 ]; then
+    echo "WARNING: Both --all and specific interfaces specified. Using all interfaces."
+fi
+
 # Start eBAF on selected interfaces
-echo ""
-echo "=========================================="
-echo "Starting eBAF"
-echo "=========================================="
+if [ $QUIET_MODE -eq 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo "Starting eBAF"
+    echo "=========================================="
+fi
 
 for iface in "${INTERFACES[@]}"; do
-    echo "Starting eBAF on interface: $iface"
+    output "Starting eBAF on interface: $iface"
     "$ADBLOCKER" "$iface" > /dev/null 2>&1 &
 
 done
@@ -362,30 +391,34 @@ if [ $running_count -eq 0 ]; then
     exit 1
 fi
 
-echo "eBAF is running successfully on ${#INTERFACES[@]} interface(s)."
+output "eBAF is running successfully on ${#INTERFACES[@]} interface(s)."
 
 # Start dashboard if requested
 if [ $ENABLE_DASHBOARD -eq 1 ]; then
-    echo ""
-    echo "Starting web dashboard..."
+    if [ $QUIET_MODE -eq 0 ]; then
+        echo ""
+        echo "Starting web dashboard..."
+    fi
     start_dashboard
 fi
 
 # Display monitoring information
-echo ""
-echo "=========================================="
-echo "eBAF Status"
-echo "=========================================="
-echo "Active interfaces: ${INTERFACES[*]}"
-echo "Running processes: $running_count"
-if [ $ENABLE_DASHBOARD -eq 1 ] && [ -n "$DASHBOARD_PID" ]; then
-    echo "Web dashboard: http://localhost:8080"
-else
-    echo "Web dashboard: Use -D flag to enable"
+if [ $QUIET_MODE -eq 0 ]; then
+    echo ""
+    echo "=========================================="
+    echo "eBAF Status"
+    echo "=========================================="
+    echo "Active interfaces: ${INTERFACES[*]}"
+    echo "Running processes: $running_count"
+    if [ $ENABLE_DASHBOARD -eq 1 ] && [ -n "$DASHBOARD_PID" ]; then
+        echo "Web dashboard: http://localhost:8080"
+    else
+        echo "Web dashboard: Use -D flag to enable"
+    fi
+    echo ""
+    echo "Use Ctrl+C to stop all instances."
+    echo "=========================================="
 fi
-echo ""
-echo "Use Ctrl+C to stop all instances."
-echo "=========================================="
 
 # Wait for processes to finish (or signal)
 wait

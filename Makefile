@@ -95,7 +95,14 @@ install: all
 	@$(MAKE) clean
 	@echo ""
 	@echo "Installation complete!"
-	@echo "Usage: sudo ebaf [--dash] [interface]"
+	@echo "Usage: ebaf [OPTIONS] [INTERFACE...]"
+	@echo "OPTIONS:"
+	@echo "  -a, --all               Run on all active interfaces"
+	@echo "  -d, --default           Run only on the default interface (with internet access)"
+	@echo "  -i, --interface IFACE   Specify an interface to use"
+	@echo "  -D, --dash              Start the web dashboard (http://localhost:8080)"
+	@echo "  -q, --quiet             Suppress output (quiet mode)"
+	@echo "  -h, --help              Show this help message"
 	@echo "Health check: sudo ebaf-health"
 
 # Remove installed files
