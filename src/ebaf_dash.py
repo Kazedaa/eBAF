@@ -219,8 +219,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             max_rate = max([point['rate'] for point in stats['rate_history']] + [1])
             
             # Graph dimensions
-            height = 16
-            width = min(500, len(stats['rate_history']) * 2)  # Dynamic width based on data
+            height = 17
+            width = min(400, len(stats['rate_history']) * 2)  # Dynamic width based on data
             
             # Create the graph grid
             graph_lines = []
@@ -339,26 +339,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         
         .main-content {{
             flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            overflow: hidden;
-        }}
-        
-        .top-grid {{
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
             gap: 20px;
-            flex-shrink: 0;
-        }}
-        
-        .graph-section {{
-            border: 2px solid #606060;
-            padding: 15px;
-            background: #0a0a0a;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
             overflow: hidden;
         }}
         
@@ -369,6 +353,32 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             flex-direction: column;
             overflow: hidden;
             background: #0a0a0a;
+        }}
+        
+        .system-status {{
+            grid-column: 1;
+            grid-row: 1;
+        }}
+        
+        .packet-stats {{
+            grid-column: 2;
+            grid-row: 1;
+        }}
+        
+        .blocked-domains {{
+            grid-column: 3;
+            grid-row: 1 / 3;
+        }}
+        
+        .graph-section {{
+            grid-column: 1 / 3;
+            grid-row: 2;
+            border: 2px solid #606060;
+            padding: 15px;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }}
         
         .section-title {{
@@ -418,6 +428,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             border: 1px solid #606060;
             padding: 10px;
             background: #050505;
+            overflow-y: auto;
         }}
         
         .domain-item {{
@@ -461,14 +472,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             overflow: hidden;
         }}
         
-        /* Hide scrollbars completely */
+        /* Hide scrollbars completely except for domains list */
         ::-webkit-scrollbar {{
-            display: none;
+            width: 6px;
         }}
         
-        * {{
-            -ms-overflow-style: none;
-            scrollbar-width: none;
+        ::-webkit-scrollbar-track {{
+            background: #000000;
+        }}
+        
+        ::-webkit-scrollbar-thumb {{
+            background: #606060;
+            border-radius: 3px;
+        }}
+        
+        ::-webkit-scrollbar-thumb:hover {{
+            background: #808080;
         }}
         
         .label {{
@@ -476,14 +495,56 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         }}
         
         @media (max-width: 1200px) {{
-            .top-grid {{
+            .main-content {{
                 grid-template-columns: 1fr 1fr;
+                grid-template-rows: auto auto auto;
+            }}
+            
+            .system-status {{
+                grid-column: 1;
+                grid-row: 1;
+            }}
+            
+            .packet-stats {{
+                grid-column: 2;
+                grid-row: 1;
+            }}
+            
+            .blocked-domains {{
+                grid-column: 1 / 3;
+                grid-row: 2;
+            }}
+            
+            .graph-section {{
+                grid-column: 1 / 3;
+                grid-row: 3;
             }}
         }}
         
         @media (max-width: 800px) {{
-            .top-grid {{
+            .main-content {{
                 grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto auto;
+            }}
+            
+            .system-status {{
+                grid-column: 1;
+                grid-row: 1;
+            }}
+            
+            .packet-stats {{
+                grid-column: 1;
+                grid-row: 2;
+            }}
+            
+            .blocked-domains {{
+                grid-column: 1;
+                grid-row: 3;
+            }}
+            
+            .graph-section {{
+                grid-column: 1;
+                grid-row: 4;
             }}
         }}
     </style>
@@ -507,56 +568,54 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         {'<div class="alert">⚠ ERROR: eBAF process not running! Execute: sudo ebaf ⚠</div>' if not stats['running'] else ''}
         
         <div class="main-content">
-            <div class="top-grid">
-                <div class="section">
-                    <div class="section-title">[System Status]</div>
-                    <div class="stats-content">
-                        <div class="status-line">
-                            <span class="label">Service:</span>
-                            <span class="{'status-active' if stats['running'] else 'status-inactive'}">{status_text}</span>
-                        </div>
-                        <div class="status-line">
-                            <span class="label">Interface:</span>
-                            <span class="number-highlight">{stats['interface']}</span>
-                        </div>
-                        <div class="status-line">
-                            <span class="label">Runtime:</span>
-                            <span class="number-highlight">{stats['runtime']}</span>
-                        </div>
+            <div class="section system-status">
+                <div class="section-title">[System Status]</div>
+                <div class="stats-content">
+                    <div class="status-line">
+                        <span class="label">Service:</span>
+                        <span class="{'status-active' if stats['running'] else 'status-inactive'}">{status_text}</span>
+                    </div>
+                    <div class="status-line">
+                        <span class="label">Interface:</span>
+                        <span class="number-highlight">{stats['interface']}</span>
+                    </div>
+                    <div class="status-line">
+                        <span class="label">Runtime:</span>
+                        <span class="number-highlight">{stats['runtime']}</span>
                     </div>
                 </div>
-                
-                <div class="section">
-                    <div class="section-title">[Packet Stats]</div>
-                    <div class="stats-content">
-                        <div class="status-line">
-                            <span class="label">Total:</span>
-                            <span class="number-highlight">{stats['total_packets']:,}</span>
-                        </div>
-                        <div class="status-line">
-                            <span class="label">Blocked:</span>
-                            <span class="number-highlight">{stats['blocked_packets']:,}</span>
-                        </div>
-                        <div class="status-line">
-                            <span class="label">Total Rate:</span>
-                            <span class="number-highlight">{stats['total_rate']:.1f}/s</span>
-                        </div>
-                        <div class="status-line">
-                            <span class="label">Block Rate:</span>
-                            <span class="number-highlight">{stats['blocked_rate']:.1f}/s</span>
-                        </div>
-                        <div class="status-line">
-                            <span class="label">Block %:</span>
-                            <span class="number-highlight">{stats['blocking_rate']:.1f}%</span>
-                        </div>
+            </div>
+            
+            <div class="section packet-stats">
+                <div class="section-title">[Packet Stats]</div>
+                <div class="stats-content">
+                    <div class="status-line">
+                        <span class="label">Total:</span>
+                        <span class="number-highlight">{stats['total_packets']:,}</span>
+                    </div>
+                    <div class="status-line">
+                        <span class="label">Blocked:</span>
+                        <span class="number-highlight">{stats['blocked_packets']:,}</span>
+                    </div>
+                    <div class="status-line">
+                        <span class="label">Total Rate:</span>
+                        <span class="number-highlight">{stats['total_rate']:.1f}/s</span>
+                    </div>
+                    <div class="status-line">
+                        <span class="label">Block Rate:</span>
+                        <span class="number-highlight">{stats['blocked_rate']:.1f}/s</span>
+                    </div>
+                    <div class="status-line">
+                        <span class="label">Block %:</span>
+                        <span class="number-highlight">{stats['blocking_rate']:.1f}%</span>
                     </div>
                 </div>
-                
-                <div class="section">
-                    <div class="section-title">[Blocked Domains]</div>
-                    <div class="domains-list">
-                        {''.join([f'<div class="domain-item">{domain}</div>' for domain in stats['blocked_domains'][:10]]) if stats['blocked_domains'] else '<div class="no-domains">No blocks recorded</div>'}
-                    </div>
+            </div>
+            
+            <div class="section blocked-domains">
+                <div class="section-title">[Blocked Domains]</div>
+                <div class="domains-list">
+                    {''.join([f'<div class="domain-item">{domain}</div>' for domain in stats['blocked_domains']]) if stats['blocked_domains'] else '<div class="no-domains">No blocks recorded</div>'}
                 </div>
             </div>
             

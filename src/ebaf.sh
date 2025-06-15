@@ -203,7 +203,7 @@ start_dashboard() {
     DASHBOARD_PID=$!
     
     # Wait longer for startup
-    sleep 10
+    sleep 15
     
     # Verify dashboard started successfully
     if kill -0 $DASHBOARD_PID 2>/dev/null; then
