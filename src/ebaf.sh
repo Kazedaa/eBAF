@@ -271,6 +271,7 @@ cleanup() {
     
     # Remove any PID files
     rm -f /tmp/ebaf-dashboard.pid 2>/dev/null
+    rm -f /tmp/ebaf* 2>/dev/null
     
     output "All eBAF instances stopped."
     exit 0
