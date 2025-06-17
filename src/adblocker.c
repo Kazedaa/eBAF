@@ -204,7 +204,7 @@ static void increase_memlock_limit(void) {
     
     // setrlimit(): sets resource limits for the process.
     if (setrlimit(RLIMIT_MEMLOCK, &rlim)) {
-        // Failed to set memory lock limit
+        printf("Failed to set memory lock limit");
     }
 }
 
@@ -226,6 +226,25 @@ static void load_ip_blacklist(void) {
     }
 }
 
+// Function to populate domain store from the generated domain list
+static void populate_domain_store(void) {
+    printf("Populating domain store with %d domains...\n", DOMAIN_LIST_SIZE);
+    
+    // Initialize domain store first
+    domain_store_init();
+    
+    // Add all domains from the generated list
+    for (int i = 0; i < DOMAIN_LIST_SIZE; i++) {
+        if (domain_store_add(blacklisted_domains[i]) == 0) {
+            printf("Added domain: %s\n", blacklisted_domains[i]);
+        } else {
+            printf("Failed to add domain: %s\n", blacklisted_domains[i]);
+        }
+    }
+    
+    printf("Domain store populated with %d domains\n", domain_store_get_count());
+}
+
 // Function: resolver_thread_func
 // Purpose: Runs in a background thread. It is responsible for resolving domain names into IP addresses and updating
 // the eBPF map with these IPs. It also prints updates when new IPs are detected.
@@ -239,6 +258,12 @@ static void *resolver_thread_func(void *data) {
         
         // Resolve all domains and update the blacklist map with any new IPs.
         domain_store_resolve_all(*map_fd);
+
+        // Update drop counts for all domains
+        domain_store_update_drop_counts(*map_fd);
+        
+        // Write domain stats to file for dashboard
+        domain_store_write_stats_file();
         
         // Sleep in intervals of 1 second for RESOLUTION_INTERVAL_SEC seconds.
         for (int i = 0; i < RESOLUTION_INTERVAL_SEC && running; i++) {
@@ -252,8 +277,9 @@ static void *resolver_thread_func(void *data) {
 // Function: write_stats_to_file
 // Purpose: Writes current statistics (total packets and blocked packets) to a temporary file. This file can be read by
 // a dashboard to display live stats.
-static void write_stats_to_file() {
+static void write_stats_to_file(void *data) {
     __u64 total, blocked;
+    int *map_fd = (int *)data;
     get_stats(&total, &blocked);
     
     FILE *fp = fopen("/tmp/ebaf-stats.dat", "w");  // fopen(): opens a file for writing.
@@ -261,6 +287,12 @@ static void write_stats_to_file() {
         fprintf(fp, "total: %llu\nblocked: %llu\n", total, blocked);
         fclose(fp);  // fclose(): closes the file pointer.
     }
+
+    // Update drop counts for all domains
+    domain_store_update_drop_counts(*map_fd);
+
+    // Write domain stats to file for dashboard
+    domain_store_write_stats_file();
 }
 
 // Main program: Entry point for the ad blocker
@@ -300,7 +332,7 @@ int main(int argc, char **argv) {
     // maps definitions, and sections required by the kernel.
     char *bpf_obj_path = get_bpf_object_path(argv[0]);
     if (!bpf_obj_path) {
-        // Failed to find the eBPF object file.
+        printf("Failed to find the eBPF object file.");
         return 1;
     }
         
@@ -308,14 +340,14 @@ int main(int argc, char **argv) {
     // bpf_object__open_file() loads the BPF object file into memory and prepares it for verification and loading.
     obj = bpf_object__open_file(bpf_obj_path, NULL);
     if (libbpf_get_error(obj)) {
-        // Failed to open the eBPF object file.
+        printf("Failed to open the eBPF object file.");
         return 1;
     }
     
     // Load the eBPF program into the kernel.
     // bpf_object__load() triggers verification and loads the eBPF programs defined in the object file into the kernel.
     if (bpf_object__load(obj)) {
-        // Failed to load BPF program
+        printf("Failed to load BPF program");
         return 1;
     }
     
@@ -323,7 +355,7 @@ int main(int argc, char **argv) {
     // bpf_object__find_program_by_name() searches for the eBPF program (xdp_blocker) using its section name.
     struct bpf_program *prog = bpf_object__find_program_by_name(obj, "xdp_blocker");
     if (!prog) {
-        // Failed to find XDP program
+        printf("Failed to find XDP program");
         return 1;
     }
     
@@ -335,12 +367,15 @@ int main(int argc, char **argv) {
     struct bpf_map *stats_map = bpf_object__find_map_by_name(obj, "stats_map");
     
     if (!blacklist_ip_map || !stats_map) {
-        // Failed to find BPF maps
+        printf("Failed to find BPF maps");
         return 1;
     }
     
     blacklist_ip_map_fd = bpf_map__fd(blacklist_ip_map);
     stats_map_fd = bpf_map__fd(stats_map);
+
+    // Populate the domain store with domains from the blacklist
+    populate_domain_store();
     
     // Initialize statistics counters in the stats map.
     __u32 key;
@@ -388,13 +423,13 @@ int main(int argc, char **argv) {
     }
     
     if (!attached){
-        //Could not attach XDP program to interface
+        printf("Could not attach XDP program to interface");
         return 1;
     }
     
     // Start the background thread for resolving domains into IP addresses.
     if (pthread_create(&resolver_thread, NULL, resolver_thread_func, &blacklist_ip_map_fd) != 0) {
-        // Failed to start resolver thread
+        printf("Failed to start resolver thread");
         return 1;
     }
     
@@ -407,7 +442,7 @@ int main(int argc, char **argv) {
         sleep(1);
         time_t now = time(NULL);
         if (now - last_stats_write >= 2) {
-            write_stats_to_file();
+            write_stats_to_file(&blacklist_ip_map_fd);
             last_stats_write = now;
         }
     }

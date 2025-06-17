@@ -186,29 +186,62 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     # Stub function to get recently blocked domains.
     # In a full implementation, this could extract domain names from logs or BPF statistics.
+
     def get_blocked_domains(self):
-        """Get recently blocked domains - simplified version"""
-        # This is a placeholder. In a real implementation, you would:
-        # 1. Read from BPF maps or log files
-        # 2. Parse domain names from blocked requests
-        # 3. Return the most recently blocked domains
-        return [
-            "doubleclick.net",
-            "googlesyndication.com", 
-            "facebook.com/tr",
-            "analytics.google.com",
-            "ads.yahoo.com",
-            "googletagmanager.com",
-            "scorecardresearch.com",
-            "outbrain.com",
-            "taboola.com",
-            "amazon-adsystem.com"
-        ]
+        """Get recently blocked domains with actual drop counts"""
+        domain_stats = []
+        stats_file = '/tmp/ebaf-domain-stats.dat'
+        
+        if os.path.exists(stats_file):
+            try:
+                with open(stats_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if ':' in line:
+                            domain, drops = line.split(':', 1)
+                            try:
+                                drop_count = int(drops)
+                                if drop_count > 0:
+                                    domain_stats.append({
+                                        'domain': domain,
+                                        'drops': drop_count
+                                    })
+                            except ValueError:
+                                continue
+            except:
+                # Fallback to placeholder data if file can't be read
+                return []
+        
+        # Sort by drop count (highest first) and take top 20
+        domain_stats.sort(key=lambda x: x['drops'], reverse=True)
+        top_domains = domain_stats[:20]
+        
+        # Return list of formatted strings for display
+        return [f"{item['domain']} ({item['drops']:,} drops)" for item in top_domains]
+
 
     # Generate HTML dashboard using the collected statistics.
     def generate_html(self, stats):
         # Determine status display based on whether eBAF is running.
         status_text = 'ACTIVE' if stats['running'] else 'INACTIVE'
+        
+        # Update the blocked domains section in the HTML
+        blocked_domains_html = """
+            <div class="section blocked-domains">
+                <div class="section-title">[Top Blocked Domains]</div>
+                <div class="domains-list">
+        """
+        
+        if stats['blocked_domains']:
+            for domain in stats['blocked_domains']:
+                blocked_domains_html += f'<div class="domain-item">{domain}</div>'
+        else:
+            blocked_domains_html += '<div class="no-domains">No blocks recorded</div>'
+        
+        blocked_domains_html += """
+                </div>
+            </div>
+        """
         
         # Create clean line graph for blocked rate
         def create_rate_graph():
@@ -435,12 +468,14 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             color: #ff6060;
             margin: 4px 0;
             font-family: monospace;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: bold;
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
         }}
         
         .domain-item:before {{
-            content: "> ";
+            content: "▶ ";
             color: #00ff00;
         }}
         
@@ -612,12 +647,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 </div>
             </div>
             
-            <div class="section blocked-domains">
-                <div class="section-title">[Blocked Domains]</div>
-                <div class="domains-list">
-                    {''.join([f'<div class="domain-item">{domain}</div>' for domain in stats['blocked_domains']]) if stats['blocked_domains'] else '<div class="no-domains">No blocks recorded</div>'}
-                </div>
-            </div>
+            {blocked_domains_html}
             
             <div class="graph-section">
                 <div class="section-title">[Block Rate Graph - Live Time Series]</div>

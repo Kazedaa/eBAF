@@ -8,9 +8,17 @@
 // The eBPF map uses these IPs to decide if a packet should be blocked.
 struct domain_entry {
     char domain[DOMAIN_MAX_SIZE];  // Holds the domain name string.
-    int status;  // Resolution status: 0 = success, 1 = failed. Used to track if the domain resolved correctly.
-    __u32 last_ip;  // The last successfully resolved IP address (stored as an unsigned 32-bit integer).
+    __u64 total_drops;  // Total packet drops for this domain
+    __u32 *resolved_ips;  // Array of all resolved IPs for this domain
+    int ip_count;  // Number of resolved IPs
+    int ip_capacity;  // Current capacity of the resolved IPs array
 };
+
+/* Interesting Note : Why do we need an ip_capacity when we have an ip_count?*/
+/* Can we not create more space as we go? Well although it is memory effecient, it is actually unneccasarily complex
+we will have to call realloc every single time we need to add an ip, which would involve finding a contiguous block of memory
+moreover this would create more fragmentation which is not memory effecient either */
+
 
 // Initialize the domain store.
 // Typically allocates memory for a fixed-size array of domain_entry structures.
@@ -28,7 +36,16 @@ int domain_store_get_count(void);  // Declaration to retrieve the count of domai
 // The updated IPs are inserted into an eBPF map, which the kernel program uses for filtering.
 int domain_store_resolve_all(int map_fd);
 
+// Get drop count for a specific domain
+__u64 domain_store_get_drops(const char *domain);
+
+// Update drop counts for all domains by reading from the BPF map
+void domain_store_update_drop_counts(int map_fd);
+
 // Clean up resources allocated for the domain store.
 void domain_store_cleanup(void);
+
+// Write domain statistics to a file for the dashboard
+void domain_store_write_stats_file(void);
 
 #endif // DOMAIN_STORE_H

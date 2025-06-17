@@ -28,6 +28,36 @@ static struct domain_entry *domains = NULL;
 static int domain_count = 0;
 static pthread_mutex_t domain_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// Initialize IP array for a domain entry
+static void init_domain_ips(struct domain_entry *entry) {
+    entry->resolved_ips = malloc(sizeof(__u32) * 4); // Start with capacity for 4 IPs
+    entry->ip_capacity = 4;
+    entry->ip_count = 0;
+    entry->total_drops = 0;
+}
+
+// Add an IP to a domain's IP list
+static int add_ip_to_domain(struct domain_entry *entry, __u32 ip) {
+    // Check if IP already exists
+    for (int i = 0; i < entry->ip_count; i++) {
+        if (entry->resolved_ips[i] == ip) {
+            return 0; // IP already exists
+        }
+    }
+    
+    // Expand array if needed
+    if (entry->ip_count >= entry->ip_capacity) {
+        entry->ip_capacity *= 2;
+        entry->resolved_ips = realloc(entry->resolved_ips, sizeof(__u32) * entry->ip_capacity);
+        if (!entry->resolved_ips) {
+            return -1;
+        }
+    }
+    
+    entry->resolved_ips[entry->ip_count++] = ip;
+    return 0;
+}
+
 // Initialize the domain store if not already created.
 void domain_store_init(void) {
     pthread_mutex_lock(&domain_mutex);
@@ -64,10 +94,10 @@ int domain_store_add(const char *domain) {
     // strncpy(): copies up to DOMAIN_MAX_SIZE - 1 characters to ensure null-termination.
     strncpy(domains[domain_count].domain, domain, DOMAIN_MAX_SIZE - 1);
     domains[domain_count].domain[DOMAIN_MAX_SIZE - 1] = '\0';
-    // Set the initial resolution status and last_ip.
-    domains[domain_count].status = RESOLUTION_FAILED;
-    domains[domain_count].last_ip = 0;
     domain_count++;
+
+    // Initialize the IP tracking for this new domain
+    init_domain_ips(&domains[domain_count - 1]);
     
     pthread_mutex_unlock(&domain_mutex);
     return 0;
@@ -112,11 +142,28 @@ static int resolve_domain_to_ip(const char *domain, __u32 *ip, int map_fd) {
     if (addr_list[0] == NULL) {
         return -1;
     }
+
+    // Find the domain entry to update its IP list
+    struct domain_entry *entry = NULL;
+    for (int i = 0; i < domain_count; i++) {
+        if (strcmp(domains[i].domain, domain) == 0) {
+            entry = &domains[i];
+            break;
+        }
+    }
+    
+    if (!entry) {
+        return -1; // Domain not found in store
+    }
     
     // Loop through all returned IP addresses.
     for (int i = 0; addr_list[i] != NULL; i++) {
         // Get each IP address and convert from network to host byte order.
-        *ip = ntohl(addr_list[i]->s_addr);
+        __u32 host_ip = ntohl(addr_list[i]->s_addr);
+        *ip = host_ip;
+
+        // Add IP to domain's IP list
+        add_ip_to_domain(entry, host_ip);
         
         // Prepare the key for the eBPF map: key must be in network byte order.
         __u32 key = htonl(*ip);
@@ -126,8 +173,6 @@ static int resolve_domain_to_ip(const char *domain, __u32 *ip, int map_fd) {
         // BPF_ANY: flag to indicate the entry should be created if it doesn't exist.
         bpf_map_update_elem(map_fd, &key, &value, BPF_ANY);
     }
-    
-    // Return success if at least one IP was added to the map.
     return 0;
 }
 
@@ -140,4 +185,67 @@ int domain_store_resolve_all(int map_fd) {
     }
     
     return 0;
+}
+
+// Get total packet drops for a specific domain
+__u64 domain_store_get_drops(const char *domain) {
+    pthread_mutex_lock(&domain_mutex);
+    
+    for (int i = 0; i < domain_count; i++) {
+        if (strcmp(domains[i].domain, domain) == 0) {
+            __u64 drops = domains[i].total_drops;
+            pthread_mutex_unlock(&domain_mutex);
+            return drops;
+        }
+    }
+    
+    pthread_mutex_unlock(&domain_mutex);
+    return 0; // Domain not found
+}
+
+// Update drop counts for all domains by reading from the BPF map
+void domain_store_update_drop_counts(int map_fd) {
+    pthread_mutex_lock(&domain_mutex);
+    
+    for (int i = 0; i < domain_count; i++) {
+        struct domain_entry *entry = &domains[i];
+        __u64 total_drops = 0;
+        
+        // Sum up drops from all IPs belonging to this domain
+        for (int j = 0; j < entry->ip_count; j++) {
+            __u32 key = htonl(entry->resolved_ips[j]); // Convert to network byte order
+            __u64 drop_count = 0;  // Use actual variable, not pointer
+            
+            // Look up the drop count for this IP in the BPF map
+            // bpf_map_lookup_elem expects: (map_fd, &key, &value_to_store_result)
+            if (bpf_map_lookup_elem(map_fd, &key, &drop_count) == 0) {
+                total_drops += drop_count;
+            }
+        }
+        
+        entry->total_drops = total_drops;
+    }
+    
+    pthread_mutex_unlock(&domain_mutex);
+}
+
+// Write domain statistics to a file for the dashboard
+void domain_store_write_stats_file(void) {
+    const char *stats_file = "/tmp/ebaf-domain-stats.dat";    
+    pthread_mutex_lock(&domain_mutex);    
+    FILE *fp = fopen(stats_file, "w");
+    if (!fp) {
+        pthread_mutex_unlock(&domain_mutex);
+        return;
+    }
+    
+    // Write each domain and its drop count
+    for (int i = 0; i < domain_count; i++) {
+        if (domains[i].total_drops > 0) {
+            fprintf(fp, "%s:%llu\n", domains[i].domain, domains[i].total_drops);
+        }
+    }
+    
+    fclose(fp);
+    pthread_mutex_unlock(&domain_mutex);
 }

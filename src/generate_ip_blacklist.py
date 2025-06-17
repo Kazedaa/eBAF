@@ -50,7 +50,7 @@ def process_ip_or_domain(line):
 
 # Generate two files: one C file with the IP blacklist and one header file defining the count.
 # These files are later used by the eBPF program to populate its IP blacklist map.
-def generate_ip_blacklist_files(ips, output_c_path):    
+def generate_ip_blacklist_files(ips, domains, output_c_path):    
     # Generate the C implementation file.
     with open(output_c_path, 'w') as f:
         f.write("#include <linux/types.h>\n\n")
@@ -63,6 +63,13 @@ def generate_ip_blacklist_files(ips, output_c_path):
         for ip_int, comment in ips:
             f.write(f"    {ip_int},  // {comment}\n")
         
+        f.write("};\n\n")
+        
+        # Generate the domain list array
+        f.write("// Domain names for dynamic resolution\n")
+        f.write("const char* blacklisted_domains[] = {\n")
+        for domain in domains:
+            f.write(f'    "{domain}",\n')
         f.write("};\n")
     
     # Generate the header file.
@@ -76,6 +83,9 @@ def generate_ip_blacklist_files(ips, output_c_path):
         # BLACKLIST_SIZE is later used by the eBPF program to know how many IPs to consider.
         f.write(f"// Number of IP addresses in the blacklist\n")
         f.write(f"#define BLACKLIST_SIZE {len(ips)}\n\n")
+        f.write("// Domain names for dynamic resolution\n")
+        f.write("extern const char* blacklisted_domains[];\n")
+        f.write(f"#define DOMAIN_LIST_SIZE {len(domains)}\n\n")
         f.write("#endif // IP_BLACKLIST_H\n")
 
 # Main entry point of the script.
@@ -95,6 +105,7 @@ def main():
 
     print(f"Processing domains and IPs from {input_file}...")
     resolved_ips = []  # List to hold the resolved IP addresses (as tuples).
+    domain_list = []   # List to hold domain names for dynamic resolution
     skipped = 0  # Counter for skipped entries.
 
     # Read the input file line by line.
@@ -104,6 +115,11 @@ def main():
             # Skip empty lines or lines that are comments.
             if not line or line.startswith('#'):
                 continue
+            
+            # Check if it's a domain (not an IP)
+            ip_int = ip_to_int(line)
+            if not ip_int:  # It's a domain, not an IP
+                domain_list.append(line)
                 
             results = process_ip_or_domain(line)
             if results:
@@ -121,7 +137,7 @@ def main():
     Path(os.path.dirname(output_file)).mkdir(parents=True, exist_ok=True)
     
     # Generate the C file and corresponding header using the resolved IPs.
-    generate_ip_blacklist_files(resolved_ips, output_file)
+    generate_ip_blacklist_files(resolved_ips, domain_list,  output_file)
     print(f"Done! Generated {output_file} with {len(resolved_ips)} IPs")
 
 # Standard Python module check to only execute main() if the script is run directly.

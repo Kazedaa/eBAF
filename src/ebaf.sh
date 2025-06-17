@@ -372,7 +372,7 @@ fi
 
 for iface in "${INTERFACES[@]}"; do
     output "Starting eBAF on interface: $iface"
-    "$ADBLOCKER" "$iface" > /dev/null 2>&1 &
+    "$ADBLOCKER" "$iface" > /tmp/ebaf- 2>&1 &
 
 done
 
