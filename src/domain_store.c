@@ -102,7 +102,6 @@ void domain_store_cleanup(void) {
 static int resolve_domain_to_ip(const char *domain, __u32 *ip, int map_fd) {
     struct hostent *he;
     struct in_addr **addr_list;
-    int success = 0;
     
     he = gethostbyname(domain);
     if (he == NULL) {
@@ -121,17 +120,15 @@ static int resolve_domain_to_ip(const char *domain, __u32 *ip, int map_fd) {
         
         // Prepare the key for the eBPF map: key must be in network byte order.
         __u32 key = htonl(*ip);
-        __u8 value = 1;
+        __u64 value = 0;
         
         // bpf_map_update_elem(): update the map with the new IP.
         // BPF_ANY: flag to indicate the entry should be created if it doesn't exist.
-        if (bpf_map_update_elem(map_fd, &key, &value, BPF_ANY) == 0) {
-            success++;
-        }
+        bpf_map_update_elem(map_fd, &key, &value, BPF_ANY);
     }
     
     // Return success if at least one IP was added to the map.
-    return (success > 0) ? 0 : -1;
+    return 0;
 }
 
 // Resolve all domains stored, update the eBPF blacklist map, and count successful resolutions.
@@ -139,8 +136,7 @@ int domain_store_resolve_all(int map_fd) {
     __u32 ip;
     
     for (int i = 0; i < domain_count; i++) {
-        if (resolve_domain_to_ip(domains[i].domain, &ip, map_fd) == 0) {
-        }
+        resolve_domain_to_ip(domains[i].domain, &ip, map_fd);
     }
     
     return 0;

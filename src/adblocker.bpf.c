@@ -25,7 +25,7 @@ struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 10000);
     __type(key, __u32);
-    __type(value, __u8);
+    __type(value, __u64);
 } blacklist_ip_map SEC(".maps");  // This macro defines a special “maps” section for eBPF maps
 
 /*
@@ -122,11 +122,13 @@ int xdp_blocker(struct xdp_md *ctx) {
        - bpf_map_lookup_elem() looks up the key (here, ip->daddr) in blacklist_ip_map.
        - If a non-null pointer is returned, the IP is blocked.
     */
-    __u8 *blocked;
-    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &ip->daddr);
-    if (blocked) {
+    __u64 *block_count_ptr;
+    block_count_ptr = bpf_map_lookup_elem(&blacklist_ip_map, &ip->daddr);
+    if (block_count_ptr) {
         // Increment blocked packet counter.
         update_stats(STAT_BLOCKED);
+        // Update IP block counter
+        __sync_fetch_and_add(block_count_ptr, 1);
         return XDP_DROP;  // XDP_DROP instructs the kernel to drop this packet.
     }
     
@@ -134,9 +136,12 @@ int xdp_blocker(struct xdp_md *ctx) {
        Similarly, check the blacklist for the source IP address.
        If the source address is found in the blacklist, also drop the packet.
     */
-    blocked = bpf_map_lookup_elem(&blacklist_ip_map, &ip->saddr);
-    if (blocked) {
+    block_count_ptr = bpf_map_lookup_elem(&blacklist_ip_map, &ip->saddr);
+    if (block_count_ptr) {
+         // Increment blocked packet counter.
         update_stats(STAT_BLOCKED);
+        // Update per-IP block counter
+        __sync_fetch_and_add(block_count_ptr, 1);
         return XDP_DROP;
     }
     

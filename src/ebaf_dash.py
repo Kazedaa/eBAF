@@ -52,9 +52,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             'runtime': 'Unknown',
             'total_packets': 0,
             'blocked_packets': 0,
-            'blocking_rate': 0.0,
+            'blocking_rate': 0.0,  # Percentage of blocked packets
             'total_rate': 0.0,
-            'blocked_rate': 0.0,
+            'blocked_rate': 0.0, #rate of blocked packets per second
             'blocked_domains': [],
             'rate_history': []
         }

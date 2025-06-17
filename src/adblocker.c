@@ -89,10 +89,6 @@ static void get_stats(__u64 *total, __u64 *blocked) {
 static void cleanup(int sig) {
     (void)sig;  // Avoids a compiler warning about an unused parameter.
     
-    // Get final statistics before cleanup.
-    __u64 total, blocked;
-    get_stats(&total, &blocked);
-    
     // Stop the resolver thread.
     running = false;
     
@@ -216,8 +212,7 @@ static void increase_memlock_limit(void) {
 // Purpose: Loads a static IP blacklist (provided by ip_blacklist.h) into the eBPF map so that the kernel program
 // can inspect it for blocking network traffic.
 static void load_ip_blacklist(void) {
-    int count = 0;
-    __u8 value = 1;  // The value used to indicate a blocked IP.
+    __u64 value = 0;  // This value indicates number of blocks
     
     printf("Loading IP blacklist into filter...\n");
     
@@ -227,7 +222,6 @@ static void load_ip_blacklist(void) {
         __u32 ip = htonl(blacklisted_ips[i]);  
         // bpf_map_update_elem() is an eBPF helper that updates an element in an eBPF map.
         if (bpf_map_update_elem(blacklist_ip_map_fd, &ip, &value, BPF_ANY) == 0) {
-            count++;
         }
     }
 }
@@ -245,17 +239,6 @@ static void *resolver_thread_func(void *data) {
         
         // Resolve all domains and update the blacklist map with any new IPs.
         domain_store_resolve_all(*map_fd);
-        
-        // Count current IPs present in the eBPF map.
-        __u32 key, next_key;
-        __u8 value;
-        
-        if (bpf_map_get_next_key(*map_fd, NULL, &key) == 0) {
-            do {
-                if (bpf_map_lookup_elem(*map_fd, &key, &value) == 0) {
-                }
-            } while (bpf_map_get_next_key(*map_fd, &key, &next_key) == 0 && (key = next_key));
-        }
         
         // Sleep in intervals of 1 second for RESOLUTION_INTERVAL_SEC seconds.
         for (int i = 0; i < RESOLUTION_INTERVAL_SEC && running; i++) {

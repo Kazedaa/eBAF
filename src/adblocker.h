@@ -27,14 +27,4 @@
 #define STAT_DNS_QUERIES 3
 #define STAT_DNS_RESPONSES 4
 
-// Structure to hold statistics (not currently used, but can be leveraged to expand the program's reporting).
-// These statistics could be updated by the userspace program based on data from the eBPF maps.
-struct stats {
-    unsigned long long total_packets;  // Total number of packets processed.
-    unsigned long long dns_blocked;      // Number of DNS queries blocked.
-    unsigned long long ip_blocked;       // Number of IP addresses blocked.
-    unsigned long long dns_queries;      // Total DNS query count.
-    unsigned long long dns_responses;    // Total DNS response count.
-};
-
 #endif
