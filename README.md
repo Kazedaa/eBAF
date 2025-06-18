@@ -177,3 +177,9 @@ A Special thanks to ❤️ <br>
 2. [AnanthVivekanand's spotify-adblock](https://github.com/AnanthVivekanand/spotify-adblock)
 
 for providing a spotify block list
+
+## ⭐️ Support the Project
+
+If you find eBAF useful, please consider starring the repository on GitHub! Your support helps increase visibility and encourages further development.
+
+[![Star the repo](https://img.shields.io/github/stars/sciencerz/eBAF?style=social)](https://github.com/Kazedaa/eBAF)
