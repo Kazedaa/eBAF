@@ -4,6 +4,7 @@
 </p>
 
 ## "You Wouldn't Download an Ad"
+### But You Would Block One!
  
 Spotify has built an empire on a simple formula: monetize your attention, underpay the artists, and sell you back your own time as a premium feature.
 In their world, your listening experience is not yours. It’s a carefully curated marketplace — your ears are the product, your patience is the currency.
@@ -16,7 +17,7 @@ Meanwhile, the artists you love — the people whose work keeps the platform ali
 This isn’t just about skipping a few annoying ads.
 It’s about refusing to participate in a system that profits from exploitation, distraction, and the commodification of your attention.
 
-### What is this?
+#### What is this?
 An elegant little act of digital resistance: a clean, open-source adblocker for Spotify that stops the noise — literally.
 
 No sketchy mods, no cracked clients, no malware masquerading as freedom. Just one goal: let the music play without being held hostage by ads.
