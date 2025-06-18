@@ -2,6 +2,7 @@
 <p align="center">
     <img src="assets/banner.png" alt="eBAF - eBPF Ad Firewall Banner" width="600"/>
 </p>
+
 ## "You Wouldn't Download an Ad"
  
 Spotify has built an empire on a simple formula: monetize your attention, underpay the artists, and sell you back your own time as a premium feature.
