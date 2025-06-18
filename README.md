@@ -1,4 +1,4 @@
-# eBPF - eBPF Ad Firewall
+# eBAF - eBPF Based Ad Firewall
 <p align="center">
     <img src="assets/banner.png" alt="eBAF - eBPF Ad Firewall Banner" width="600"/>
 </p>
