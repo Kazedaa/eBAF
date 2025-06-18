@@ -1,0 +1,114 @@
+*.*.ap.spotify.com # resolved access points
+*ap.spotify.com # access points
+ap-*.spotify.com # access points
+localhost # local proxies
+audio-sp-*.pscdn.co # audio
+audio-fa.scdn.co # audio
+audio4-fa.scdn.co # audio
+charts-images.scdn.co # charts images
+daily-mix.scdn.co # daily mix images
+dailymix-images.scdn.co # daily mix images
+heads-fa.scdn.co # audio (heads)
+i.scdn.co # cover art
+lineup-images.scdn.co # playlists lineup images
+merch-img.scdn.co # merch images
+misc.scdn.co # miscellaneous images
+mosaic.scdn.co # playlist mosaic images
+newjams-images.scdn.co # release radar images
+o.scdn.co # cover art
+pl.scdn.co # playlist images
+profile-images.scdn.co # artist profile images
+seeded-session-images.scdn.co # radio images
+t.scdn.co # background images
+thisis-images.scdn.co # 'this is' playlists images
+video-fa.scdn.co # videos
+content.production.cdn.art19.com # podcasts
+rss.art19.com # podcasts
+*.buzzsprout.com # podcasts
+platform-lookaside.fbsbx.com # Facebook profile images
+genius.com # lyrics (genius-spicetify)
+*.gvt1.com # Widevine download
+hwcdn.libsyn.com # podcasts
+traffic.libsyn.com # podcasts
+api*-desktop.musixmatch.com # lyrics (genius-spicetify)
+*.podbean.com # podcasts
+dts.podtrac.com # podcasts
+www.podtrac.com # podcasts
+audio.simplecast.com # podcasts
+media.simplecast.com # podcasts
+ap.spotify.com # audio (access point)
+*.ap.spotify.com # resolved access points
+api.spotify.com # client APIs
+api-partner.spotify.com # album/artist pages
+xpui.app.spotify.com # user interface
+apresolve.spotify.com # access point resolving
+clienttoken.spotify.com # login
+*dealer.spotify.com # websocket connections
+image-upload*.spotify.com # image uploading
+login*.spotify.com # login
+*-spclient.spotify.com # client APIs
+spclient.wg.spotify.com # client APIs ads/tracking (blocked in blacklist)
+audio-fa.spotifycdn.com # audio
+seed-mix-image.spotifycdn.com # mix images
+download.ted.com # podcasts
+dcs*.megaphone.fm # podcasts
+traffic.megaphone.fm # podcasts
+audio-ak-spotify-com.akamaized.net # audio
+audio4-ak-spotify-com.akamaized.net # audio
+heads4-ak-spotify-com.akamaized.net # audio (heads)
+audio4-ak.spotify.com.edgesuite.net # audio
+scontent*.fbcdn.net # Facebook profile images
+audio-sp-*.spotifycdn.net # audio
+dovetail.prxu.org # podcasts
+dovetail-cdn.prxu.org # podcasts
+login5.spotify.com # Spotify login domain
+spclient.wg.spotify.com # Spotify domain providing music and controlling it
+open.spotify.com # Spotify domain for web platform
+api-partner.spotify.com # Provides some of the main images of the app such as the home screen
+partners.wg.spotify.com # Provides some of the main images of the app such as the home screen
+api.spotify.com # Spotify main api
+audio4-fa.scdn.co # Some platforms need this domain unlocked to get audio tracks from Spotify servers
+seektables.scdn.co # Nest Mini devices can't properly cast towards using the Spotify mobile app
+cast.scdn.co # Server for casting to google devices such as Google Nest
+# Spotify's Anti-Adveritsing blocking servers, tricking services to stop music services (DONT BLOCK THESE!):
+gcdn.2mdn.net
+r9---sn-n4v7kn76.c.2mdn.net
+gew1-accesspoint-b-zzfg.ap.spotify.com
+ns1.p23.dynect.net
+ns3.p23.dynect.net
+ns4.p23.dynect.net
+dns1.p07.nsone.net
+dns2.p07.nsone.net
+dns3.p07.nsone.net
+dns4.p07.nsone.net
+audio-sp-fra2.pscdn.co
+104.199.65.11
+
+# Don't block entries below, they are needed for Spotify to be fully functional.
+apresolve.spotify.com #access point list also used for chromecast
+api-spotify.com
+api-partner.spotify.com
+api-tv.spotify.com
+ash-dealer.spotify.com #Load balancer
+ash.weblb-wg.dual-gslb.spotify.com #Load balancer
+audio-sp.spotify.com #Audio server!
+audio-fa.spotify.com #Audio server!
+dealer.spotify.com
+dealer-ssl.spotify.com
+gslb.spotify.com
+open.scdn.co
+open.spotify.com #web player, you can block this for app only
+play.spotify.com #web player, you can block this for app only
+spclient.spotify.com
+sto3.spotify.com
+wg.spotify.com #(*) Breaks entire app
+geo3.ggpht.com #Just dont block!
+googlehosted.l.googleusercontent.com #Just dont block!
+redirector.gvt1.com
+
+# Optional: If you want to listen to music on your TV, or for cover art example.
+tv.scdn.co
+i.scdn.co #album covers
+o.scdn.co #more images
+p.scdn.co #maybe profile images
+t.scdn.co #maybe images for charts

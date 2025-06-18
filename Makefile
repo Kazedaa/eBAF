@@ -35,7 +35,8 @@ endif
 
 OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 
-BLACKLIST ?= spotify-stable
+BLACKLIST ?= spotify-stable.txt
+WHITELIST ?= spotify-whitelist.txt
 
 # =============================================================================
 # BUILD TARGETS
@@ -47,9 +48,15 @@ directories:
 	mkdir -p $(BIN_DIR)
 
 # Generate the IP blacklist C file and header from the specified blacklist file
-$(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/ip_blacklist.h: $(SRC_DIR)/generate_ip_blacklist.py $(BLACKLIST)
+$(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/ip_blacklist.h: $(SRC_DIR)/generate_headers.py $(BLACKLIST)
 	@echo "Generating IP blacklist from $(BLACKLIST)..."
-	python3 $(SRC_DIR)/generate_ip_blacklist.py $(BLACKLIST) $(SRC_DIR)/ip_blacklist.c
+	@if [ -f "$(WHITELIST)" ]; then \
+		echo "Using whitelist: $(WHITELIST)"; \
+		python3 $(SRC_DIR)/generate_headers.py $(BLACKLIST) $(SRC_DIR)/ip_blacklist.c $(WHITELIST); \
+	else \
+		echo "No whitelist file found, proceeding without whitelist"; \
+		python3 $(SRC_DIR)/generate_headers.py $(BLACKLIST) $(SRC_DIR)/ip_blacklist.c; \
+	fi
 
 # Compile eBPF program (depends on the generated header)
 $(OBJ_DIR)/%.bpf.o: $(SRC_DIR)/%.bpf.c $(SRC_DIR)/ip_blacklist.h
@@ -136,18 +143,18 @@ help:
 	@echo "eBAF - eBPF Ad Blocker Firewall"
 	@echo ""
 	@echo "BUILD OPTIONS:"
-	@echo "  make                             Build with default blacklist ($(BLACKLIST))"
-	@echo "  make BLACKLIST=file.txt          Build with custom blacklist file"
-	@echo "  make clean                       Remove all build artifacts"
+	@echo "  make                             							   Build with default blacklist ($(BLACKLIST)) and whitelist ($(WHITELIST))"
+	@echo "  make BLACKLIST=blacklist.txt WHITELIST=whitelist.txt          Build with custom blacklist file"
+	@echo "  make clean                                                    Remove all build artifacts"
 	@echo ""
 	@echo "INSTALLATION:"
-	@echo "  make install                     Build and install system-wide, then clean project"
-	@echo "  make install BLACKLIST=file.txt  Build with custom blacklist, install, then clean"
-	@echo "  make uninstall                   Remove all installed files"
+	@echo "  make install                                                  Build and install system-wide, then clean project"
+	@echo "  make install BLACKLIST=blacklist.txt WHITELIST=whitelist.txt  Build with custom lists, install, then clean"
+	@echo "  make uninstall                                                Remove all installed files"
 	@echo ""
 	@echo "UTILITIES:"
-	@echo "  make help                        Show this help"
-	@echo "  make find-interface              Find available network interfaces"
+	@echo "  make help                                                     Show this help"
+	@echo "  make find-interface                                           Find available network interfaces"
 	@echo ""
 
 # Find available network interfaces

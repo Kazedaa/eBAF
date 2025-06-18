@@ -2,6 +2,7 @@ import sys               # Provides system-specific parameters and functions.
 import socket            # Module for networking operations (e.g., IP address conversion, hostname resolution).
 import struct            # Provides functions to convert between Python values and C structs represented as Python bytes.
 import os                # Provides functions for interacting with the operating system (file and directory operations).
+import fnmatch            # Add this import for wildcard matching
 from pathlib import Path # Offers an object-oriented approach to handling filesystem paths.
 
 # Convert an IP string to an integer in host byte order.
@@ -14,17 +15,56 @@ def ip_to_int(ip_str):
     except:
         return None
 
-# Process a single line which may contain an IP or a domain.
-def process_ip_or_domain(line):
-    line = line.strip()  # Remove leading and trailing whitespace.
+# New function to load whitelist domains
+def load_whitelist_domains(whitelist_file):
+    whitelist_domains = []
+    
+    if not os.path.exists(whitelist_file):
+        print(f"Warning: Whitelist file {whitelist_file} not found, proceeding without whitelist")
+        return whitelist_domains
+    
+    print(f"Loading whitelist from {whitelist_file}...")
+    
+    with open(whitelist_file, 'r') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            # Skip empty lines or comments
+            if not line or line.startswith('#'):
+                continue
+            
+            # Remove comment from the line
+            if '#' in line:
+                domain = line.split('#')[0].strip()
+            else:
+                domain = line
+            
+            if domain:
+                whitelist_domains.append(domain)
+                print(f"Added whitelist pattern: {domain}",file=open("build_logs.log", "a"))
+    
+    print(f"Loaded {len(whitelist_domains)} whitelist patterns")
+    return whitelist_domains
+
+# New function to check if a domain is whitelisted
+def is_whitelisted(domain, whitelist_patterns):
+    """Check if a domain matches any whitelist pattern (supports wildcards)"""
+    for pattern in whitelist_patterns:
+        # Handle wildcard patterns
+        if fnmatch.fnmatch(domain, pattern):
+            return True
+        # Also check exact match (case insensitive)
+        if domain.lower() == pattern.lower():
+            return True
+    return False
+
+def process_ip_or_domain(line, whitelist_patterns):
+    line = line.strip()
     if not line or line.startswith('#'):
-        return None  # Skip empty lines or comments.
+        return None
 
     # Assume the entry is a direct IP address.
     ip_int = ip_to_int(line)
     if ip_int:
-        # Return a list with a tuple containing the integer IP and a comment.
-        # These IP addresses will later be inserted into an eBPF map for packet filtering.
         return [(ip_int, line)]
     
     # If it's not an IP, try resolving it as a domain.
@@ -35,17 +75,15 @@ def process_ip_or_domain(line):
         for ip in ip_addresses:
             ip_int = ip_to_int(ip)
             if ip_int:
-                # Append each resolved IP and include the original domain with the resolved IP in the comment.
                 results.append((ip_int, f"{line} ({ip})"))
         
         if results:
             return results
         else:
-            sys.stderr.write(f"Warning: Could not resolve domain {line}\n")
+            print(f"Warning: Could not resolve domain {line}",file=open("build_logs.log", "a"))
             return None
     except socket.gaierror:
-        # socket.gaierror is raised for address-related errors.
-        sys.stderr.write(f"Warning: Could not resolve domain {line}\n")
+        print(f"Warning: Could not resolve domain {line} : gaierror",file=open("build_logs.log", "a"))
         return None
 
 # Generate two files: one C file with the IP blacklist and one header file defining the count.
@@ -90,23 +128,31 @@ def generate_ip_blacklist_files(ips, domains, output_c_path):
 
 # Main entry point of the script.
 def main():
-    # Check that exactly 2 arguments are provided: the input file and the output C file.
-    if len(sys.argv) != 3:
-        sys.stderr.write(f"Usage: {sys.argv[0]} INPUT_FILE OUTPUT_C_FILE\n")
+    os.system("rm build_logs.log")  # Clear the log file at the start of the script.
+    # Updated to accept 3 arguments: input file, output C file, and optional whitelist file
+    if len(sys.argv) < 3 or len(sys.argv) > 4:
+        sys.stderr.write(f"Usage: {sys.argv[0]} INPUT_FILE OUTPUT_C_FILE [WHITELIST_FILE]\n")
         sys.exit(1)
 
     input_file = sys.argv[1]
     output_file = sys.argv[2]
+    whitelist_file = sys.argv[3] if len(sys.argv) == 4 else None
 
     # Verify that the input file exists before proceeding.
     if not os.path.exists(input_file):
         sys.stderr.write(f"Error: Input file {input_file} not found\n")
         sys.exit(1)
 
+    # Load whitelist patterns
+    whitelist_patterns = []
+    if whitelist_file:
+        whitelist_patterns = load_whitelist_domains(whitelist_file)
+
     print(f"Processing domains and IPs from {input_file}...")
     resolved_ips = []  # List to hold the resolved IP addresses (as tuples).
     domain_list = []   # List to hold domain names for dynamic resolution
     skipped = 0  # Counter for skipped entries.
+    whitelisted = 0
 
     # Read the input file line by line.
     with open(input_file, 'r') as f:
@@ -116,14 +162,17 @@ def main():
             if not line or line.startswith('#'):
                 continue
             
-            # Check if it's a domain (not an IP)
-            ip_int = ip_to_int(line)
-            if not ip_int:  # It's a domain, not an IP
-                domain_list.append(line)
+            # Check if this domain is whitelisted before processing
+            if is_whitelisted(line, whitelist_patterns):
+                print(f"Skipping whitelisted domain: {line}",file=open("build_logs.log", "a"))
+                whitelisted += 1
+                continue
+            
+
+            domain_list.append(line)
                 
-            results = process_ip_or_domain(line)
+            results = process_ip_or_domain(line, whitelist_patterns)
             if results:
-                # Extend the resolved_ips list.
                 if isinstance(results, list):
                     resolved_ips.extend(results)
                 else:
@@ -131,14 +180,14 @@ def main():
             else:
                 skipped += 1
 
-    print(f"Successfully resolved {len(resolved_ips)} IPs, skipped {skipped} entries")
+    print(f"Successfully resolved {len(resolved_ips)} IPs, skipped {skipped} entries, whitelisted {whitelisted} domains")
     
     # Ensure the directory for the output file exists; create it if it doesn't.
     Path(os.path.dirname(output_file)).mkdir(parents=True, exist_ok=True)
     
     # Generate the C file and corresponding header using the resolved IPs.
-    generate_ip_blacklist_files(resolved_ips, domain_list,  output_file)
-    print(f"Done! Generated {output_file} with {len(resolved_ips)} IPs")
+    generate_ip_blacklist_files(resolved_ips, domain_list, output_file)
+    print(f"Done! Generated {output_file} with {len(resolved_ips)} IPs and {len(domain_list)} domains for dynamic resolution")
 
 # Standard Python module check to only execute main() if the script is run directly.
 if __name__ == "__main__":
