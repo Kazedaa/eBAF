@@ -182,4 +182,4 @@ for providing a spotify block list
 
 If you find eBAF useful, please consider starring the repository on GitHub! Your support helps increase visibility and encourages further development.
 
-[![Star the repo](https://img.shields.io/github/stars/sciencerz/eBAF?style=social)](https://github.com/Kazedaa/eBAF)
+[![Star the repo](https://img.shields.io/github/stars/Kazedaa/eBAF?style=social)](https://github.com/Kazedaa/eBAF)
