@@ -83,7 +83,7 @@ curl -sSL https://raw.githubusercontent.com/Kazedaa/eBAF/main/uninstall.sh | sud
 ```
 
 
-## Installing Dependencies 
+## Installing Dependencies (for devs)
 Run the following commands to install the required dependencies:
 ### Ubuntu/Debian
 ```bash
@@ -117,7 +117,7 @@ sudo rm /usr/include/asm
 sudo ln -s <current_link> /usr/include/asm
 ```
 
-## Building the Project
+### Building the Project
 
 To build the eBPF Adblocker, follow these steps:
 
@@ -145,11 +145,6 @@ To build the eBPF Adblocker, follow these steps:
     ```bash
     make uninstall
     ````
-
-## Run a health check
-```bash 
-sudo ebaf-health
-```
 
 ## Usage
 
