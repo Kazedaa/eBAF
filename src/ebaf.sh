@@ -20,7 +20,7 @@ sudo pkill -f ebaf_dash.py 2>/dev/null
 sudo rm -f /tmp/ebaf* 2>/dev/null
 
 # Brief wait to ensure cleanup completes
-sleep 2
+sleep 30
 
 # =============================================================================
 # CONFIGURATION AND INITIALIZATION
