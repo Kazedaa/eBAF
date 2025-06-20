@@ -35,7 +35,7 @@ endif
 
 OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 
-BLACKLIST ?= spotify-stable.txt
+BLACKLIST ?= spotify-blacklist.txt
 WHITELIST ?= spotify-whitelist.txt
 
 # =============================================================================
