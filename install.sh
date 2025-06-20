@@ -112,6 +112,106 @@ cleanup() {
     fi
 }
 
+ask_spotify_integration() {
+    print_section "SPOTIFY INTEGRATION OPTION"
+    printf "${BLUE}${BOLD}Spotify Auto-Start Integration${NC}\n"
+    printf "${GREEN}This feature will:${NC}\n"
+    printf "  • Automatically start eBAF when Spotify opens\n"
+    printf "  • Stop eBAF when Spotify closes\n"
+    printf "  • Enable web dashboard at http://localhost:8080\n"
+    printf "  • Wait for eBAF to initialize before Spotify starts\n\n"
+    
+    printf "${YELLOW}${BOLD}Note:${NC} This requires sudo permissions for eBAF to run automatically.\n"
+    printf "A sudoers rule will be created to allow passwordless eBAF execution.\n\n"
+    
+    while true; do
+        printf "${CYAN}${BOLD}Do you want to enable Spotify integration? [y/N]: ${NC}"
+        read -r response
+        
+        case $response in
+            [Yy]|[Yy][Ee][Ss])
+                return 0  # Yes, enable integration
+                ;;
+            [Nn]|[Nn][Oo]|"")
+                return 1  # No, skip integration
+                ;;
+            *)
+                printf "${RED}Please answer yes (y) or no (n).${NC}\n"
+                ;;
+        esac
+    done
+}
+
+setup_spotify_integration() {
+    print_section "SPOTIFY INTEGRATION SETUP"
+    print_info "Setting up automatic Spotify integration..."
+    
+    # Get the script directory
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Install the monitor script
+    print_info "Installing Spotify monitor service..."
+    sudo cp "$SCRIPT_DIR/scripts/ebaf-spotify-monitor.sh" /usr/local/bin/ebaf-spotify-monitor
+    sudo chmod +x /usr/local/bin/ebaf-spotify-monitor
+    
+    # Install systemd user service
+    print_info "Creating systemd user service..."
+    sudo cp "$SCRIPT_DIR/systemd/ebaf-spotify.service" /etc/systemd/user/ebaf-spotify.service
+    
+    # Install sudoers configuration
+    print_info "Configuring sudo permissions..."
+    sudo cp "$SCRIPT_DIR/sudoers/ebaf-spotify" /etc/sudoers.d/ebaf-spotify
+    sudo chmod 440 /etc/sudoers.d/ebaf-spotify
+    
+    # Validate sudoers file
+    if ! sudo visudo -c -f /etc/sudoers.d/ebaf-spotify; then
+        print_error "Invalid sudoers configuration! Removing file..."
+        sudo rm -f /etc/sudoers.d/ebaf-spotify
+        return 1
+    fi
+    
+    # Enable the service for the current user
+    print_info "Enabling service for current user..."
+    
+    # Get the actual user (not root)
+    ACTUAL_USER="${SUDO_USER:-$USER}"
+    
+    if [ "$ACTUAL_USER" != "root" ]; then
+        # Only reload user daemon, not system daemon
+        print_info "Reloading user systemd daemon (this won't affect system services)..."
+        sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user daemon-reload
+        
+        # Enable and start the service
+        sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user enable ebaf-spotify.service
+        
+        # Start the service
+        print_info "Starting Spotify integration service..."
+        if sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user start ebaf-spotify.service; then
+            print_status "Spotify integration enabled for user: $ACTUAL_USER"
+            print_info "eBAF will now automatically start when Spotify is opened"
+            print_info "Web dashboard available at: http://localhost:8080"
+            
+            # Check service status
+            sleep 2
+            if sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user is-active --quiet ebaf-spotify.service; then
+                print_status "Service is running successfully"
+            else
+                print_warning "Service may not have started correctly. Check with:"
+                print_info "  systemctl --user status ebaf-spotify.service"
+            fi
+        else
+            print_error "Failed to start Spotify integration service"
+            print_info "You can try starting it manually with:"
+            print_info "  systemctl --user start ebaf-spotify.service"
+        fi
+    else
+        print_warning "Running as root - please enable the service manually after installation:"
+        print_info "  systemctl --user daemon-reload"
+        print_info "  systemctl --user enable ebaf-spotify.service"
+        print_info "  systemctl --user start ebaf-spotify.service"
+    fi
+}
+
 # Set up cleanup trap
 trap cleanup EXIT
 
@@ -411,6 +511,17 @@ install_pid=$!
 show_real_progress $install_pid "Building and installing eBAF (grab a coffee and relax ☕)"
 wait $install_pid
 
+# Ask user about Spotify integration
+ENABLE_SPOTIFY_INTEGRATION=false
+if ask_spotify_integration; then
+    ENABLE_SPOTIFY_INTEGRATION=true
+    setup_spotify_integration
+else
+    print_info "Skipping Spotify integration setup."
+    print_info "You can manually enable it later by re-running the installer."
+fi
+
+
 printf "\n${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n"
 printf "${WHITE}${BOLD}                        INSTALLATION COMPLETED!                                ${NC}\n"
 printf "${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n"
@@ -427,5 +538,25 @@ printf "${CYAN}  -i, --interface IFACE   ${NC}Specify an interface to use\n"
 printf "${CYAN}  -D, --dash              ${NC}Start the web dashboard (http://localhost:8080)\n"
 printf "${CYAN}  -q, --quiet             ${NC}Suppress output (quiet mode)\n"
 printf "${CYAN}  -h, --help              ${NC}Show help message\n\n"
+
+printf "${BLUE}${BOLD}USAGE:${NC}\n"
+printf "${GREEN}  ✓ ${NC}Manual run: sudo ebaf -d -D\n"
+printf "${GREEN}  ✓ ${NC}Run on all interfaces: sudo ebaf -a -D\n"
+printf "${GREEN}  ✓ ${NC}Web dashboard: http://localhost:8080\n\n"
+
+if [ "$ENABLE_SPOTIFY_INTEGRATION" = true ]; then
+    printf "${BLUE}${BOLD}SPOTIFY INTEGRATION:${NC}\n"
+    printf "${GREEN}  ✓ ${NC}Automatic start/stop with Spotify\n"
+    printf "${GREEN}  ✓ ${NC}Web dashboard available at http://localhost:8080\n"
+    printf "${GREEN}  ✓ ${NC}Service enabled for current user\n"
+    printf "${GREEN}  ✓ ${NC}Check service status: systemctl --user status ebaf-spotify.service\n\n"
+else
+    printf "${BLUE}${BOLD}SPOTIFY INTEGRATION:${NC}\n"
+    printf "${YELLOW}  ! ${NC}Not enabled - you can re-run installer to enable it\n\n"
+fi
+
+printf "${BLUE}${BOLD}CONFIGURATION:${NC}\n"
+printf "${GREEN}  ✓ ${NC}Blacklist: /usr/local/share/ebaf/spotify-blacklist.txt\n"
+printf "${GREEN}  ✓ ${NC}Whitelist: /usr/local/share/ebaf/spotify-whitelist.txt\n\n"
 
 printf "${GREEN}${BOLD}Ready to start blocking ads with eBPF!${NC}\n"

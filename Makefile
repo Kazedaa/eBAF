@@ -171,6 +171,7 @@ uninstall:
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
 	@sudo rm -f $(INSTALL_SHARE)/adblocker.bpf.o
 	@sudo rm -f $(INSTALL_SHARE)/ebaf_dash.py
+	@sudo rm -f $(INSTALL_BIN)/ebaf-*
 	@printf "$(GREEN)  ✓ Application data removed$(NC)\n"
 	@sudo rm -rf $(INSTALL_BIN)/$(WHITELIST)
 	@sudo rm -rf $(INSTALL_BIN)/$(BLACKLIST)
