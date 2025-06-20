@@ -402,13 +402,13 @@ install_pid=$!
 show_real_progress $install_pid "Building and installing eBAF (grab a coffee and relax ☕)"
 wait $install_pid
 
-# printf "\n${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n"
-# printf "${WHITE}${BOLD}                        INSTALLATION COMPLETED!                                ${NC}\n"
-# printf "${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n"
-# printf "${CYAN}  eBAF has been successfully installed to your system${NC}\n"
-# printf "${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n\n"
+printf "\n${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n"
+printf "${WHITE}${BOLD}                        INSTALLATION COMPLETED!                                ${NC}\n"
+printf "${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n"
+printf "${CYAN}  eBAF has been successfully installed to your system${NC}\n"
+printf "${GREEN}${BOLD}════════════════════════════════════════════════════════════════════════════════${NC}\n\n"
 
-# printf "${BLUE}${BOLD}USAGE:${NC}\n"
+printf "${BLUE}${BOLD}USAGE:${NC}\n"
 printf "${WHITE}  ebaf [OPTIONS] [INTERFACE...]${NC}\n\n"
 
 printf "${BLUE}${BOLD}OPTIONS:${NC}\n"
