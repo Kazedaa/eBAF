@@ -151,16 +151,16 @@ setup_spotify_integration() {
     
     # Install the monitor script
     print_info "Installing Spotify monitor service..."
-    sudo cp "$SCRIPT_DIR/scripts/ebaf-spotify-monitor.sh" /usr/local/bin/ebaf-spotify-monitor
+    sudo cp "$SCRIPT_DIR/src/scripts/ebaf-spotify-monitor.sh" /usr/local/bin/ebaf-spotify-monitor
     sudo chmod +x /usr/local/bin/ebaf-spotify-monitor
     
     # Install systemd user service
     print_info "Creating systemd user service..."
-    sudo cp "$SCRIPT_DIR/systemd/ebaf-spotify.service" /etc/systemd/user/ebaf-spotify.service
+    sudo cp "$SCRIPT_DIR/src/systemd/ebaf-spotify.service" /etc/systemd/user/ebaf-spotify.service
     
     # Install sudoers configuration
     print_info "Configuring sudo permissions..."
-    sudo cp "$SCRIPT_DIR/sudoers/ebaf-spotify" /etc/sudoers.d/ebaf-spotify
+    sudo cp "$SCRIPT_DIR/src/sudoers/ebaf-spotify" /etc/sudoers.d/ebaf-spotify
     sudo chmod 440 /etc/sudoers.d/ebaf-spotify
     
     # Validate sudoers file
