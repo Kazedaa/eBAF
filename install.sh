@@ -110,7 +110,7 @@ install_system_deps() {
         sudo apt update
         sudo apt install -y net-tools
     elif command -v pacman &> /dev/null; then
-        sudo pacman -Syu -y
+        sudo pacman -Syu --noconfirm
         sudo pacman -S --needed --noconfirm git libbpf clang llvm libelf zlib gcc make python net-tools bc linux-headers
     elif command -v dnf &> /dev/null; then
         sudo dnf update
