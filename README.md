@@ -68,16 +68,17 @@ eBAF (eBPF Ad Firewall) leverages eBPF (Extended Berkeley Packet Filter) to bloc
 eBAF combines efficiency, transparency, and ease of use to deliver a powerful ad-blocking solution.
 
 ## Simple Install (Reccomended)
+Make sure to have git and curl installed
+```bash
+git --version
+curl --version
+```
 ### Install
 ```bash
-sudo apt update
-sudo apt install git curl
 curl -sSL https://raw.githubusercontent.com/Kazedaa/eBAF/main/install.sh | sudo bash
 ```
 ### Uninstall
 ```bash
-sudo apt update
-sudo apt install git curl
 curl -sSL https://raw.githubusercontent.com/Kazedaa/eBAF/main/uninstall.sh | sudo bash
 ```
 
