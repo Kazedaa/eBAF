@@ -128,7 +128,11 @@ def generate_ip_blacklist_files(ips, domains, output_c_path):
 
 # Main entry point of the script.
 def main():
-    os.system("rm build_logs.log")  # Clear the log file at the start of the script.
+    os.system("rm -f build_logs.log")  # Clear the log file at the start of the script.
+    
+    # Suppress repetitive output by redirecting to log file
+    sys.stdout = open('build_logs.log', 'a')
+    
     # Updated to accept 3 arguments: input file, output C file, and optional whitelist file
     if len(sys.argv) < 3 or len(sys.argv) > 4:
         sys.stderr.write(f"Usage: {sys.argv[0]} INPUT_FILE OUTPUT_C_FILE [WHITELIST_FILE]\n")
@@ -188,6 +192,11 @@ def main():
     # Generate the C file and corresponding header using the resolved IPs.
     generate_ip_blacklist_files(resolved_ips, domain_list, output_file)
     print(f"Done! Generated {output_file} with {len(resolved_ips)} IPs and {len(domain_list)} domains for dynamic resolution")
+
+    # At the end, restore stdout and print final summary
+    sys.stdout.close()
+    sys.stdout = sys.__stdout__
+    print(f"Generated {len(resolved_ips)} IPs and {len(domain_list)} domains")
 
 # Standard Python module check to only execute main() if the script is run directly.
 if __name__ == "__main__":

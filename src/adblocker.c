@@ -444,8 +444,6 @@ int main(int argc, char **argv) {
         "generic (SKB)",
         "default"
     };
-
-    prog_fd = bpf_program__fd(skel->progs.adblocker_xdp);
     
     // Attempt to attach the XDP program in different modes.
     int attached = 0;
@@ -454,6 +452,7 @@ int main(int argc, char **argv) {
         
         // bpf_xdp_attach() is an eBPF helper that attaches an XDP program to a network interface.
         if (bpf_xdp_attach(ifindex, prog_fd, xdp_flags[i], NULL) == 0) {
+            printf("XDP program attached to %s with %s mode\n", ifname, mode_names[i]);
             attached = 1;
             break;
         }
