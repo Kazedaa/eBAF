@@ -110,15 +110,23 @@ sudo apt-get update
 sudo apt-get install libbpf-dev clang llvm libelf-dev zlib1g-dev gcc make python3
 ```
 
-### RHEL/CentOS/Fedora
-Run the following commands to install the required dependencies:
+### Fix asm/types.h Error whiel running eBPF code
+Check the current link
+`ls -l /usr/include/asm`
+Find the currect link
+`find /usr/include -name "types.h" | grep asm`
+Fix the symbolic link 
 ```bash
-# Fedora
-sudo dnf install libbpf-devel clang llvm elfutils-libelf-devel zlib-devel gcc make python3
-
-# RHEL/CentOS (may need EPEL repository)
-sudo yum install libbpf-devel clang llvm elfutils-libelf-devel zlib-devel gcc make python3
+sudo rm /usr/include/asm
+sudo ln -s <current_link> /usr/include/asm
 ```
+
+### Install netstat
+```bash
+sudo apt update
+sudo apt install net-tools
+```
+
 
 ## Building the Project
 
@@ -149,6 +157,11 @@ To build the eBPF Adblocker, follow these steps:
     make uninstall
     ````
 
+## Run a health check
+```bash 
+sudo ebaf-health
+```
+
 ## Usage
 
 ### Running the Adblocker
@@ -162,10 +175,6 @@ To build the eBPF Adblocker, follow these steps:
     -q, --quiet             Suppress output (quiet mode)
     -h, --help              Show this help message
 
-### Running a health check
-```bash 
-sudo ebaf-health
-```
 
 ### Configuring Blacklist
 Edit the lists to add or remove domains. Each domain should be on a separate line. Comments start with `#`.
