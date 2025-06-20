@@ -63,12 +63,19 @@ show_step_progress() {
     fi
 }
 
-# Print header
 print_header() {
-    printf "\n${PURPLE}════════════════════════════════════════════════════════════════════════════════${NC}\n"
-    printf "${WHITE}${BOLD}                            eBAF INSTALLER                                     ${NC}\n"
+    printf "${GREEN}${BOLD}"
+    cat << 'EOF'
+                   ███████╗  ██████╗    █████╗   ███████╗
+                   ██╔════╝  ██╔══██╗  ██╔══██╗  ██╔════╝
+                   █████╗    ██████╔╝  ███████║  █████╗  
+                   ██╔══╝    ██╔══██╗  ██╔══██║  ██╔══╝  
+                   ███████╗  ██████╔╝  ██║  ██║  ██║     
+                   ╚══════╝  ╚═════╝   ╚═╝  ╚═╝  ╚═╝     
+EOF
+    printf "${NC}"
     printf "${PURPLE}════════════════════════════════════════════════════════════════════════════════${NC}\n"
-    printf "${CYAN}  eBPF Based Ad Firewall - Automated Installation Script${NC}\n"
+    printf "${CYAN}          eBPF Based Ad Firewall - Automated Installation Script${NC}\n"
     printf "${PURPLE}════════════════════════════════════════════════════════════════════════════════${NC}\n\n"
 }
 
