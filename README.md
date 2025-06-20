@@ -49,57 +49,23 @@ We’re not here to pirate. We’re here to opt out.<br>
 
 eBAF (eBPF Ad Firewall) leverages the power of eBPF (Extended Berkeley Packet Filter) to block unwanted advertisements at the kernel level. Here's a high-level overview of its functionality:
 
+## How does eBAF work?
+
+eBAF (eBPF Ad Firewall) leverages eBPF (Extended Berkeley Packet Filter) to block ads at the kernel level efficiently. Here's a simplified overview:
+
 1. **Packet Filtering**:
-   - eBAF uses an eBPF program attached to a network interface via XDP (eXpress Data Path). This program inspects incoming network packets and blocks those matching a blacklist of IP addresses.
+   - Inspects incoming network packets and blocks those matching a blacklist of IP addresses using XDP (eXpress Data Path).
 
-2. **Kernel Bypass**:
-   - By utilizing XDP, eBAF bypasses the traditional kernel networking stack for packet processing. This allows it to operate directly at the network interface level, significantly improving performance and reducing latency.
+2. **Dynamic Updates**:
+   - Resolves domain names into IP addresses and updates the blacklist dynamically to stay effective against changing ad servers.
 
-3. **Dynamic Updates**:
-   - A background process resolves domain names into IP addresses and updates the blacklist dynamically, ensuring effectiveness against changing ad server IPs.
+3. **Web Dashboard**:
+   - Provides live statistics and monitoring through a user-friendly interface.
 
-4. **Statistics Tracking**:
-   - eBAF tracks the number of packets processed and blocked, providing insights into its performance.
+4. **High Performance**:
+   - Operates directly at the network interface level, bypassing the kernel's networking stack for faster processing and minimal resource usage.
 
-5. **Web Dashboard**:
-   - A web-based dashboard displays live statistics, such as blocked packets and runtime, offering a user-friendly monitoring interface.
-
-6. **Health Checks**:
-   - A dedicated script performs system checks to ensure eBAF is functioning correctly, verifying dependencies and network configurations.
-
-7. **High Performance**:
-   - Operating at the kernel level with XDP, eBAF achieves fast packet processing with minimal resource usage, making it suitable for real-time ad blocking.
-
-### Pros of Using This Method
-
-1. **Efficiency**:
-   - Kernel-level filtering ensures faster packet processing compared to traditional userspace adblockers.
-
-2. **Kernel Bypass**:
-   - By bypassing the kernel's networking stack, eBAF reduces latency and achieves higher throughput.
-
-3. **Low Resource Usage**:
-   - Minimal CPU and memory overhead makes eBAF ideal for resource-constrained systems.
-
-4. **Dynamic Updates**:
-   - The ability to resolve domains and update the blacklist dynamically ensures continued effectiveness.
-
-5. **Transparency**:
-   - Open-source and free from sketchy modifications, ensuring security and reliability.
-
-6. **Customizability**:
-   - Users can modify the blacklist to suit their needs.
-
-7. **Real-Time Monitoring**:
-   - The web dashboard provides live statistics for monitoring performance.
-
-8. **Cross-Platform Compatibility**:
-   - Works on any Linux-based system with eBPF support.
-
-9. **Non-Intrusive**:
-   - Operates at the network level, blocking ads across all applications without interfering with their functionality.
-
-By combining efficiency, kernel bypass, and ease of use, eBAF offers a powerful and ethical solution
+eBAF combines efficiency, transparency, and ease of use to deliver a powerful ad-blocking solution.
 
 ## Installing Dependencies
 
