@@ -2,17 +2,25 @@
 # install.sh
 set -e
 
-echo "Installing eBAF..."
+REPO_URL="https://github.com/Kazedaa/eBAF.git"  # Replace with your actual repo URL
+TEMP_DIR=""
 
-# Check dependencies
-check_deps() {
-    for cmd in libbpf-dev clang llvm libelf-dev zlib1g-dev gcc make python3; do
-        if ! command -v $cmd &> /dev/null; then
-            echo "Missing dependency: $cmd"
-            exit 1
-        fi
-    done
+cleanup() {
+    if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
+        echo "Cleaning up temporary directory..."
+        rm -rf "$TEMP_DIR"
+    fi
 }
+
+# Set up cleanup trap
+trap cleanup EXIT
+
+echo "Cloning eBAF repository..."
+TEMP_DIR=$(mktemp -d)
+git clone "$REPO_URL" "$TEMP_DIR"
+cd "$TEMP_DIR"
+
+echo "Installing eBAF..."
 
 fix_asm_headers() {
     echo "Checking asm header symlinks..."
@@ -71,11 +79,11 @@ fix_asm_headers() {
     if [ -n "$ASM_DIR" ]; then
         echo "Found asm headers at: $ASM_DIR"
         # Remove existing symlink if it exists
-        [ -L /usr/include/asm ] && rm /usr/include/asm
-        [ -d /usr/include/asm ] && rm -rf /usr/include/asm
+        [ -L /usr/include/asm ] && sudo rm /usr/include/asm
+        [ -d /usr/include/asm ] && sudo rm -rf /usr/include/asm
         
         # Create new symlink
-        ln -sf "$ASM_DIR" /usr/include/asm
+        sudo ln -sf "$ASM_DIR" /usr/include/asm
         echo "Created symlink: /usr/include/asm -> $ASM_DIR"
         
         # Verify the fix
@@ -97,23 +105,22 @@ fix_asm_headers() {
 install_system_deps() {
     if command -v apt-get &> /dev/null; then
         sudo apt-get update
-        sudo apt-get install libbpf-dev clang llvm libelf-dev zlib1g-dev gcc make python3 linux-headers-\$(uname -r)
+        sudo apt-get install -y git libbpf-dev clang llvm libelf-dev zlib1g-dev gcc make python3 linux-headers-$(uname -r)
 
         sudo apt update
-        sudo apt install net-tools
+        sudo apt install -y net-tools
     elif command -v pacman &> /dev/null; then
         sudo pacman -Syu
-        sudo pacman -S --needed libbpf clang llvm libelf zlib gcc make python net-tools bc linux-headers
+        sudo pacman -S --needed git libbpf clang llvm libelf zlib gcc make python net-tools bc linux-headers
     elif command -v dnf &> /dev/null; then
         sudo dnf update
-        sudo dnf install -y libbpf-devel clang llvm elfutils-libelf-devel zlib-devel gcc make python3 net-tools bc kernel-headers kernel-devel
+        sudo dnf install -y git libbpf-devel clang llvm elfutils-libelf-devel zlib-devel gcc make python3 net-tools bc kernel-headers kernel-devel
     else
         echo "Please install dependencies manually"
         exit 1
     fi
 }
 
-check_deps
 install_system_deps
 fix_asm_headers
 
