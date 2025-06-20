@@ -308,7 +308,6 @@ static int load_whitelist_patterns(void) {
     const char *whitelist_paths[] = {
         "spotify-whitelist.txt",                           // Current directory (development)
         "/usr/local/share/ebaf/spotify-whitelist.txt",     // System installation
-        NULL
     };
     
     FILE *fp = NULL;
@@ -380,16 +379,7 @@ void whitelist_resolver_init(int whitelist_map_fd) {
 //   1. Check each blacklisted domain against whitelist patterns
 //   2. Resolve matching domains and add their IPs to whitelist
 //   3. Also resolve explicit (non-wildcard) domains from whitelist
-void whitelist_resolver_update(int whitelist_map_fd) {
-    printf("Resolving whitelisted domains and patterns...\n");
-    
-    if (!whitelist_patterns || whitelist_pattern_count == 0) {
-        printf("Warning: No whitelist patterns loaded\n");
-        return;
-    }
-    
-    pthread_mutex_lock(&whitelist_mutex);
-    
+void whitelist_resolver_update(int whitelist_map_fd) {    
     // Step 1: Check blacklisted domains against whitelist patterns
     // This handles the case where a blacklisted domain actually matches a whitelist pattern
     printf("Resolving whitelisted domains and patterns...\n");
