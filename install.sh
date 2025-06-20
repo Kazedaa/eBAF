@@ -28,7 +28,22 @@ fix_asm_headers() {
     # Check if /usr/include/asm exists and is valid
     if [ -L /usr/include/asm ] && [ -e /usr/include/asm ]; then
         echo "asm symlink exists and is valid"
-        return 0
+        
+        # Check for both types.h and byteorder.h specifically
+        missing_headers=()
+        if [ ! -f /usr/include/asm/types.h ]; then
+            missing_headers+=("types.h")
+        fi
+        if [ ! -f /usr/include/asm/byteorder.h ]; then
+            missing_headers+=("byteorder.h")
+        fi
+        
+        if [ ${#missing_headers[@]} -eq 0 ]; then
+            echo "All required asm headers found"
+            return 0
+        else
+            echo "Missing headers: ${missing_headers[*]}"
+        fi
     fi
     
     echo "Fixing asm header symlinks..."
@@ -86,18 +101,69 @@ fix_asm_headers() {
         sudo ln -sf "$ASM_DIR" /usr/include/asm
         echo "Created symlink: /usr/include/asm -> $ASM_DIR"
         
-        # Verify the fix
+        # Verify types.h
         if [ -f /usr/include/asm/types.h ]; then
             echo "✓ asm/types.h is now accessible"
         else
             echo "✗ Warning: asm/types.h still not found"
         fi
+        
+        # Handle byteorder.h specifically - it's often in a different location
+        if [ ! -f /usr/include/asm/byteorder.h ]; then
+            echo "Searching for byteorder.h..."
+            
+            # Common locations for byteorder.h on Arch
+            BYTEORDER_PATHS=(
+                "/usr/include/asm-generic/byteorder.h"
+                "/usr/include/$ASM_ARCH-linux-gnu/asm/byteorder.h"
+                "/usr/include/linux/byteorder/little_endian.h"
+                "/usr/include/linux/byteorder/big_endian.h"
+            )
+            
+            # Try to find byteorder.h
+            BYTEORDER_FOUND=""
+            for path in "${BYTEORDER_PATHS[@]}"; do
+                if [ -f "$path" ]; then
+                    BYTEORDER_FOUND="$path"
+                    break
+                fi
+            done
+            
+            # If not found in common locations, search for it
+            if [ -z "$BYTEORDER_FOUND" ]; then
+                BYTEORDER_FOUND=$(find /usr/include -name "byteorder.h" 2>/dev/null | head -1)
+            fi
+            
+            if [ -n "$BYTEORDER_FOUND" ]; then
+                echo "Found byteorder.h at: $BYTEORDER_FOUND"
+                sudo ln -sf "$BYTEORDER_FOUND" /usr/include/asm/byteorder.h
+                echo "Created symlink: /usr/include/asm/byteorder.h -> $BYTEORDER_FOUND"
+                echo "✓ asm/byteorder.h is now accessible"
+            else
+                echo "✗ Warning: byteorder.h not found"
+                echo "Creating fallback byteorder.h..."
+                
+                # Create a minimal byteorder.h that includes the generic one
+                sudo tee /usr/include/asm/byteorder.h > /dev/null << 'EOF'
+#ifndef _ASM_BYTEORDER_H
+#define _ASM_BYTEORDER_H
+
+#include <asm-generic/byteorder.h>
+
+#endif /* _ASM_BYTEORDER_H */
+EOF
+                echo "✓ Created fallback asm/byteorder.h"
+            fi
+        else
+            echo "✓ asm/byteorder.h is accessible"
+        fi
+        
     else
         echo "✗ Could not find asm/types.h automatically"
         echo "You may need to install kernel headers:"
         echo "  Ubuntu/Debian: sudo apt install linux-headers-\$(uname -r)"
         echo "  Fedora: sudo dnf install kernel-headers kernel-devel"
-        echo "  Arch: sudo pacman -S linux-headers"
+        echo "  Arch: sudo pacman -S linux-headers linux-api-headers"
     fi
 }
 
