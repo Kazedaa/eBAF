@@ -404,7 +404,7 @@ print_section "BUILDING AND INSTALLING eBAF"
 print_info "Building and installing eBAF components..."
 
 # Simple make install with progress
-make install >/tmp/build_install.log 2>&1 &
+make install >/dev/null 2>&1 &
 install_pid=$!
 show_real_progress $install_pid "Building and installing eBAF (grab a coffee and relax ☕)"
 wait $install_pid

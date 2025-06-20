@@ -1,0 +1,15 @@
+[Unit]
+Description=eBAF Spotify Auto-Start Service
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ebaf-spotify-monitor
+Restart=always
+RestartSec=10
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=%i
+
+[Install]
+WantedBy=default.target
