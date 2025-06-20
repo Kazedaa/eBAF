@@ -1,5 +1,5 @@
-#ifndef DOMAIN_STORE_H
-#define DOMAIN_STORE_H
+#ifndef RESOLVER_H
+#define RESOLVER_H
 
 #include "adblocker.h"  // Includes shared definitions and constants, e.g., DOMAIN_MAX_SIZE
 
@@ -18,7 +18,6 @@ struct domain_entry {
 /* Can we not create more space as we go? Well although it is memory effecient, it is actually unneccasarily complex
 we will have to call realloc every single time we need to add an ip, which would involve finding a contiguous block of memory
 moreover this would create more fragmentation which is not memory effecient either */
-
 
 // Initialize the domain store.
 // Typically allocates memory for a fixed-size array of domain_entry structures.
@@ -47,5 +46,16 @@ void domain_store_cleanup(void);
 
 // Write domain statistics to a file for the dashboard
 void domain_store_write_stats_file(void);
+
+// Whitelist-related functions
+// Initialize whitelist resolver - loads patterns and resolves initial IPs
+void whitelist_resolver_init(int whitelist_map_fd);
+
+// Resolve whitelisted domains and add their IPs to whitelist map
+// Handles both explicit domains and wildcard patterns
+void whitelist_resolver_update(int whitelist_map_fd);
+
+// Check if a domain matches any whitelist pattern
+int whitelist_domain_matches(const char *domain);
 
 #endif // DOMAIN_STORE_H

@@ -51,7 +51,7 @@
 
 #include "adblocker.h"          // Custom header for constants used in the ad blocker
 #include "ip_blacklist.h"       // Header that holds the list of blacklisted IP addresses
-#include "domain_store.h"       // Header for domain store handling and resolution
+#include "resolver.h"       // Header for domain store handling and resolution
 
 // Global variables to maintain the state of the program
 
@@ -246,29 +246,48 @@ static void populate_domain_store(void) {
 }
 
 // Function: resolver_thread_func
-// Purpose: Runs in a background thread. It is responsible for resolving domain names into IP addresses and updating
-// the eBPF map with these IPs. It also prints updates when new IPs are detected.
-static void *resolver_thread_func(void *data) {
-    int *map_fd = (int *)data;    
+// Purpose: Background thread that continuously resolves domains and updates both blacklist and whitelist maps
+// Parameters:
+//   - arg: Pointer to blacklist map file descriptor
+// Behavior:
+//   - Resolves blacklisted domains every RESOLUTION_INTERVAL_SEC seconds
+//   - Re-resolves whitelisted domains every 10 minutes to handle DNS changes
+//   - Maintains domain statistics for the dashboard
+void* resolver_thread_func(void* arg) {
+    int *blacklist_map_fd = (int*)arg;
+    int whitelist_map_fd;
+    
+    // Get whitelist map file descriptor from the loaded eBPF object
+    struct bpf_map *whitelist_map = bpf_object__find_map_by_name(obj, "whitelist_ip_map");
+    if (!whitelist_map) {
+        printf("Error: Could not find whitelist_ip_map\n");
+        return NULL;
+    }
+    whitelist_map_fd = bpf_map__fd(whitelist_map);  // Get file descriptor for map operations
+    
+    // Initial whitelist resolution - populate whitelist on startup
+    whitelist_resolver_init(whitelist_map_fd);
+    
+    // Main resolution loop - runs until program termination
     while (running) {
-        // Initialize the domain store if it hasn't been already.
-        if (domain_store_get_count() == 0) {
-            domain_store_init();
+        // Resolve blacklisted domains (existing functionality)
+        // This updates the blacklist map with new IPs from blacklisted domains
+        domain_store_resolve_all(*blacklist_map_fd);
+        
+        // Periodic whitelist re-resolution to handle DNS changes
+        // CDNs and services frequently change their IP addresses
+        static time_t last_whitelist_resolve = 0;
+        time_t now = time(NULL);
+        
+        // Re-resolve whitelist every 10 minutes (600 seconds)
+        if (now - last_whitelist_resolve >= 600) {
+            printf("Periodic whitelist re-resolution...\n");
+            whitelist_resolver_update(whitelist_map_fd);
+            last_whitelist_resolve = now;
         }
         
-        // Resolve all domains and update the blacklist map with any new IPs.
-        domain_store_resolve_all(*map_fd);
-
-        // Update drop counts for all domains
-        domain_store_update_drop_counts(*map_fd);
-        
-        // Write domain stats to file for dashboard
-        domain_store_write_stats_file();
-        
-        // Sleep in intervals of 1 second for RESOLUTION_INTERVAL_SEC seconds.
-        for (int i = 0; i < RESOLUTION_INTERVAL_SEC && running; i++) {
-            sleep(1);  // sleep(): suspends execution for the given number of seconds.
-        }
+        // Sleep for 30 seconds before next resolution cycle
+        sleep(30);
     }
     
     return NULL;
@@ -365,7 +384,17 @@ int main(int argc, char **argv) {
     // bpf_object__find_map_by_name() locates maps within the BPF object by their names.
     struct bpf_map *blacklist_ip_map = bpf_object__find_map_by_name(obj, "blacklist_ip_map");
     struct bpf_map *stats_map = bpf_object__find_map_by_name(obj, "stats_map");
-    
+
+    // Initialize whitelist map if it exists in the eBPF program
+    // This is optional - the program will work without whitelist but with reduced functionality
+    struct bpf_map *whitelist_map = bpf_object__find_map_by_name(obj, "whitelist_ip_map");
+    if (whitelist_map) {
+        int whitelist_map_fd = bpf_map__fd(whitelist_map);
+        printf("Whitelist map initialized successfully (fd: %d)\n", whitelist_map_fd);
+    } else {
+        printf("Warning: Whitelist map not found - running without whitelist protection\n");
+    }
+
     if (!blacklist_ip_map || !stats_map) {
         printf("Failed to find BPF maps");
         return 1;

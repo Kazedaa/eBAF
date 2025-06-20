@@ -68,6 +68,16 @@ static __always_inline void update_stats(__u32 stat_type) {
     }
 }
 
+// Whitelist IP map - stores IP addresses that should never be blocked
+// Key: IP address in network byte order (__u32)
+// Value: timestamp or counter (__u64) - currently just set to 1 for existence check
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10000);              // Maximum number of whitelisted IPs
+    __type(key, __u32);                      // IP address (network byte order)
+    __type(value, __u64);                    // timestamp or counter
+} whitelist_ip_map SEC(".maps");
+
 /*
    XDP Program: xdp_blocker
    - This is the main eBPF function that is invoked for each network packet.
@@ -116,7 +126,20 @@ int xdp_blocker(struct xdp_md *ctx) {
     struct iphdr *ip = (struct iphdr *)(data + sizeof(*eth));
     if ((void *)ip + sizeof(*ip) > data_end)
         return XDP_PASS;
-    
+
+    // Priority check: Check whitelist first before blacklist
+    // If IP is whitelisted, always allow the packet to pass through
+    __u64 *whitelist_ptr_daddr = bpf_map_lookup_elem(&whitelist_ip_map, &ip->daddr);
+    if (whitelist_ptr_daddr) {
+        return XDP_PASS;  // Allow whitelisted IPs - bypasses all blocking logic
+    }
+
+    __u64 *whitelist_ptr_saddr = bpf_map_lookup_elem(&whitelist_ip_map, &ip->saddr);
+    if (whitelist_ptr_saddr) {
+        return XDP_PASS;  // Allow whitelisted IPs - bypasses all blocking logic
+    }
+
+
     /*
        Check the blacklist for the destination IP address:
        - bpf_map_lookup_elem() looks up the key (here, ip->daddr) in blacklist_ip_map.

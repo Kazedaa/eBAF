@@ -13,7 +13,7 @@ OBJ_DIR = obj
 BIN_DIR = bin
 
 TARGET = $(BIN_DIR)/adblocker
-SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/domain_store.c
+SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/resolver.c
 
 INSTALL_BIN = /usr/local/bin
 INSTALL_SHARE = /usr/local/share/ebaf
