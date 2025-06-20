@@ -177,7 +177,7 @@ install_system_deps() {
         sudo apt install -y net-tools
     elif command -v pacman &> /dev/null; then
         sudo pacman -Syu --noconfirm
-        sudo pacman -S --needed --noconfirm git libbpf clang llvm libelf zlib gcc make python net-tools bc linux-headers linmux-api-headers
+        sudo pacman -S --needed --noconfirm git libbpf clang llvm libelf zlib gcc make python net-tools bc linux-headers linux-api-headers
     elif command -v dnf &> /dev/null; then
         sudo dnf update
         sudo dnf install -y git libbpf-devel clang llvm elfutils-libelf-devel zlib-devel gcc make python3 net-tools bc kernel-headers kernel-devel

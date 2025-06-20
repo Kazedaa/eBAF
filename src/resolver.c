@@ -304,9 +304,28 @@ int whitelist_domain_matches(const char *domain) {
 // Returns: 0 on success, -1 on error
 // Note: This is a helper function called by whitelist_resolver_init
 static int load_whitelist_patterns(void) {
-    FILE *fp = fopen("spotify-whitelist.txt", "r");
+    // Try multiple locations for the whitelist file
+    const char *whitelist_paths[] = {
+        "spotify-whitelist.txt",                           // Current directory (development)
+        "/usr/local/share/ebaf/spotify-whitelist.txt",     // System installation
+        NULL
+    };
+    
+    FILE *fp = NULL;
+    int i = 0;
+    
+    // Try each path until we find the file
+    while (whitelist_paths[i] != NULL) {
+        fp = fopen(whitelist_paths[i], "r");
+        if (fp != NULL) {
+            printf("Loading whitelist from: %s\n", whitelist_paths[i]);
+            break;
+        }
+        i++;
+    }
+    
     if (!fp) {
-        printf("Warning: Could not open spotify-whitelist.txt\n");
+        printf("Warning: No whitelist file found in any of the expected locations\n");
         return -1;
     }
     
@@ -373,9 +392,37 @@ void whitelist_resolver_update(int whitelist_map_fd) {
     
     // Step 1: Check blacklisted domains against whitelist patterns
     // This handles the case where a blacklisted domain actually matches a whitelist pattern
-    FILE *fp = fopen("spotify-blacklist.txt", "r");
+    printf("Resolving whitelisted domains and patterns...\n");
+    
+    if (!whitelist_patterns || whitelist_pattern_count == 0) {
+        printf("Warning: No whitelist patterns loaded\n");
+        return;
+    }
+    
+    pthread_mutex_lock(&whitelist_mutex);
+    
+    // Step 1: Check blacklisted domains against whitelist patterns
+    // Try multiple locations for the blacklist file
+    const char *blacklist_paths[] = {
+        "spotify-blacklist.txt",                           // Current directory (development)
+        "/usr/local/share/ebaf/spotify-blacklist.txt",     // System installation
+        NULL
+    };
+    
+    FILE *fp = NULL;
+    int i = 0;
+    
+    // Try each path until we find the file
+    while (blacklist_paths[i] != NULL) {
+        fp = fopen(blacklist_paths[i], "r");
+        if (fp != NULL) {
+            break;
+        }
+        i++;
+    }
+    
     if (!fp) {
-        printf("Warning: Could not open spotify-blacklist.txt for pattern matching\n");
+        printf("Warning: Could not open blacklist file for pattern matching\n");
         pthread_mutex_unlock(&whitelist_mutex);
         return;
     }

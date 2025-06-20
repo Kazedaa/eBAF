@@ -100,6 +100,7 @@ install: all
 	@sudo cp $(BIN_DIR)/ebaf-health $(INSTALL_BIN)/
 	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_SHARE)/
 	@sudo cp "$(WHITELIST)" $(INSTALL_SHARE)
+	@sudo cp "$(BLACKLIST)" $(INSTALL_SHARE)
 	@$(MAKE) clean
 	@echo ""
 	@echo "Installation complete!"
@@ -119,6 +120,8 @@ uninstall:
 	sudo rm -f $(INSTALL_BIN)/adblocker $(INSTALL_BIN)/ebaf $(INSTALL_BIN)/ebaf-health
 	sudo rm -f $(INSTALL_SHARE)/adblocker.bpf.o
 	sudo rm -f $(INSTALL_SHARE)/ebaf_dash.py
+	sudo rm -rf $(INSTALL_BIN)/$(WHITELIST)
+	 sudo rm -rf $(INSTALL_BIN)/$(BLACKLIST)
 	sudo rm -rf $(INSTALL_SHARE)
 	sudo rm -f /tmp/ebaf-*
 	@echo "Uninstall complete. You can go ahead and delete the project directory if you wish."
