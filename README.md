@@ -68,12 +68,26 @@ eBAF (eBPF Ad Firewall) leverages eBPF (Extended Berkeley Packet Filter) to bloc
 eBAF combines efficiency, transparency, and ease of use to deliver a powerful ad-blocking solution.
 
 ## Installing Dependencies
-
-### Ubuntu/Debian
 Run the following commands to install the required dependencies:
+### Ubuntu/Debian
 ```bash
 sudo apt-get update
 sudo apt-get install libbpf-dev clang llvm libelf-dev zlib1g-dev gcc make python3
+
+sudo apt update
+sudo apt install net-tools
+```
+
+### Fedora/CentOS/RHEL 8+
+```bash
+sudo dnf update
+sudo dnf install -y libbpf-devel clang llvm elfutils-libelf-devel zlib-devel gcc make python3 net-tools bc
+```
+
+### Arch
+```bash
+sudo pacman -Syu
+sudo pacman -S --needed libbpf clang llvm libelf zlib gcc make python net-tools bc
 ```
 
 ### Fix asm/types.h Error whiel running eBPF code
@@ -86,13 +100,6 @@ Fix the symbolic link
 sudo rm /usr/include/asm
 sudo ln -s <current_link> /usr/include/asm
 ```
-
-### Install netstat
-```bash
-sudo apt update
-sudo apt install net-tools
-```
-
 
 ## Building the Project
 
