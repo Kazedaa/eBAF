@@ -99,6 +99,7 @@ install: all
 	@sudo cp src/ebaf_dash.py $(INSTALL_SHARE)/
 	@sudo cp $(BIN_DIR)/ebaf-health $(INSTALL_BIN)/
 	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_SHARE)/
+	@sudo cp "$(WHITELIST)" $(INSTALL_SHARE)
 	@$(MAKE) clean
 	@echo ""
 	@echo "Installation complete!"
