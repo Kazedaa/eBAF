@@ -63,6 +63,9 @@ static int stats_map_fd;        // File descriptor for the eBPF map holding stat
 static pthread_t resolver_thread;   // Thread for resolving domain names into IPs
 static volatile bool running = true;  // Flag that controls the main loop and thread execution
 
+// Global variable to store the bpf program file descriptor
+static int prog_fd = -1;
+
 // Function: get_stats
 // Purpose: Reads the statistics (total packets and blocked packets) from the eBPF stats map
 // __u64: unsigned 64-bit integer used to store large count values
@@ -100,7 +103,15 @@ static void cleanup(int sig) {
     
     // Detach the eBPF/XDP program from the network interface.
     // bpf_xdp_detach() is an eBPF helper to remove an XDP program attached to an interface.
-    bpf_xdp_detach(ifindex, 0, NULL);
+    // Targeted XDP program detachment using stored program fd
+    if (prog_fd >= 0) {
+        if (bpf_xdp_detach(ifindex, XDP_FLAGS_UPDATE_IF_NOEXIST, NULL) == 0) {
+            printf("XDP program detached successfully\n");
+        } else {
+            // Fallback to generic detach if targeted fails
+            bpf_xdp_detach(ifindex, 0, NULL);
+        }
+    }
     exit(0); // Terminate the program.
 }
 
@@ -433,6 +444,8 @@ int main(int argc, char **argv) {
         "generic (SKB)",
         "default"
     };
+
+    prog_fd = bpf_program__fd(skel->progs.adblocker_xdp);
     
     // Attempt to attach the XDP program in different modes.
     int attached = 0;

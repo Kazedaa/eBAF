@@ -42,7 +42,7 @@ WHITELIST ?= spotify-whitelist.txt
 # BUILD TARGETS
 # =============================================================================
 
-all: directories $(TARGET) ebaf ebaf-health ebaf-dash
+all: directories $(TARGET) ebaf ebaf-dash
 directories:
 	mkdir -p $(OBJ_DIR)
 	mkdir -p $(BIN_DIR)
@@ -74,14 +74,6 @@ ebaf: directories
 	@cat $(SRC_DIR)/ebaf.sh >> $(BIN_DIR)/ebaf
 	@chmod +x $(BIN_DIR)/ebaf
 
-# Create the health check script
-ebaf-health: directories
-	@echo '#!/bin/bash' > $(BIN_DIR)/ebaf-health
-	@echo '# eBPF Ad Blocker Firewall (eBAF) - Health Check' >> $(BIN_DIR)/ebaf-health
-	@echo '' >> $(BIN_DIR)/ebaf-health
-	@cat $(SRC_DIR)/ebaf-health.sh >> $(BIN_DIR)/ebaf-health
-	@chmod +x $(BIN_DIR)/ebaf-health
-
 ebaf-dash: directories
 	@cp $(SRC_DIR)/ebaf_dash.py $(BIN_DIR)/
 
@@ -97,7 +89,6 @@ install: all
 	@sudo cp $(BIN_DIR)/adblocker.bpf.o $(INSTALL_SHARE)/
 	@sudo cp $(BIN_DIR)/ebaf $(INSTALL_BIN)/
 	@sudo cp src/ebaf_dash.py $(INSTALL_SHARE)/
-	@sudo cp $(BIN_DIR)/ebaf-health $(INSTALL_BIN)/
 	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_SHARE)/
 	@sudo cp "$(WHITELIST)" $(INSTALL_SHARE)
 	@sudo cp "$(BLACKLIST)" $(INSTALL_SHARE)
@@ -112,12 +103,11 @@ install: all
 	@echo "  -D, --dash              Start the web dashboard (http://localhost:8080)"
 	@echo "  -q, --quiet             Suppress output (quiet mode)"
 	@echo "  -h, --help              Show this help message"
-	@echo "Health check: sudo ebaf-health"
 
 # Remove installed files
 uninstall:
 	@echo "Uninstalling eBAF..."
-	sudo rm -f $(INSTALL_BIN)/adblocker $(INSTALL_BIN)/ebaf $(INSTALL_BIN)/ebaf-health
+	sudo rm -f $(INSTALL_BIN)/adblocker $(INSTALL_BIN)/ebaf
 	sudo rm -f $(INSTALL_SHARE)/adblocker.bpf.o
 	sudo rm -f $(INSTALL_SHARE)/ebaf_dash.py
 	sudo rm -rf $(INSTALL_BIN)/$(WHITELIST)

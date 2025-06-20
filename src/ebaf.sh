@@ -7,6 +7,22 @@
 # 4. Handling graceful cleanup on exit
 
 # =============================================================================
+# INITIAL CLEANUP - Remove any existing eBAF instances
+# =============================================================================
+
+# Clean up any existing adblocker processes
+sudo pkill -f adblocker 2>/dev/null
+
+# Clean up any existing dashboard processes
+sudo pkill -f ebaf_dash.py 2>/dev/null
+
+# Clean up temporary files
+sudo rm -f /tmp/ebaf* 2>/dev/null
+
+# Brief wait to ensure cleanup completes
+sleep 2
+
+# =============================================================================
 # CONFIGURATION AND INITIALIZATION
 # =============================================================================
 
@@ -342,6 +358,8 @@ for iface in "${INTERFACES[@]}"; do
     if ip link show "$iface" &>/dev/null; then
         valid_interfaces+=("$iface")
         output "  $iface - Valid"
+        # Remove XDP programs from interfaces that will be used
+        sudo ip link set dev "$iface" xdp off 2>/dev/null
     else
         output "  $iface - Interface not found"
     fi
