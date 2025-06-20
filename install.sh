@@ -64,6 +64,8 @@ show_step_progress() {
 }
 
 print_header() {
+    printf "${NC}"
+    printf "${NC}"
     printf "${GREEN}${BOLD}"
     cat << 'EOF'
                    ███████╗  ██████╗    █████╗   ███████╗
