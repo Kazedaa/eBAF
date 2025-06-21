@@ -2,9 +2,6 @@
 # uninstall.sh
 set -e
 
-REPO_URL="https://github.com/Kazedaa/eBAF.git"  # Replace with your actual repo URL
-TEMP_DIR=""
-
 # Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -15,6 +12,12 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
+
+INSTALL_BIN="/usr/local/bin"
+INSTALL_SHARE="/usr/local/share/ebaf"
+
+WHITELIST="whitelist.txt"
+BLACKLIST="blacklist.txt"
 
 # Progress bar function
 show_progress() {
@@ -134,61 +137,25 @@ print_header
 
 remove_spotify_integration
 
-print_section "DEPENDENCY CHECK"
-# Check if git is available
-if ! command -v git &> /dev/null; then
-    print_warning "Git is required for uninstallation. Installing git..."
-    if command -v apt-get &> /dev/null; then
-        sudo apt-get update && sudo apt-get install -y git >/dev/null 2>&1
-    elif command -v pacman &> /dev/null; then
-        sudo pacman -S --needed git >/dev/null 2>&1
-    elif command -v dnf &> /dev/null; then
-        sudo dnf install -y git >/dev/null 2>&1
-    else
-        print_error "Please install git manually and run this script again"
-        exit 1
-    fi
-    print_status "Git installed successfully"
-else
-    print_status "Git is available"
-fi
-
-print_section "REPOSITORY SETUP"
-
-# Clone repository to temporary directory
-print_info "Cloning eBAF repository for uninstallation..."
-TEMP_DIR=$(mktemp -d)
-if git clone "$REPO_URL" "$TEMP_DIR" >/dev/null 2>&1; then
-    print_status "Repository cloned successfully"
-else
-    print_error "Failed to clone repository"
-    exit 1
-fi
-cd "$TEMP_DIR"
-
 print_section "UNINSTALLATION PROCESS"
 
-# Run make uninstall
-if [ -f "Makefile" ]; then
-    print_info "Executing uninstallation process..."
-    show_progress 5 "Removing eBAF files and directories... "
-    make uninstall >/dev/null 2>&1
-    
-    printf "\n${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n"
-    printf "${WHITE}${BOLD}                      UNINSTALLATION COMPLETED!                               ${NC}\n"
-    printf "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n"
-    printf "${CYAN}  eBAF has been successfully removed from your system${NC}\n"
-    printf "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n\n"
-    
-    printf "${BLUE}${BOLD}REMOVED COMPONENTS:${NC}\n"
-    printf "${CYAN}  ✓ ${NC}eBAF binary files\n"
-    printf "${CYAN}  ✓ ${NC}eBPF object files\n"
-    printf "${CYAN}  ✓ ${NC}Configuration files\n"
-    printf "${CYAN}  ✓ ${NC}Dashboard components\n"
-    printf "${CYAN}  ✓ ${NC}Temporary files\n\n"
-    
-    printf "${GREEN}${BOLD}eBAF has been completely removed from your system!${NC}\n"
-else
-    print_error "Makefile not found in repository"
-    exit 1
-fi
+show_progress 5 "Removing eBAF files and directories... "
+print_info "Removing Binaries"
+sudo rm -f $INSTALL_BIN/adblocker $INSTALL_BIN/ebaf
+print_info "Removing Data Files"
+sudo rm -f $INSTALL_SHARE/adblocker.bpf.o
+sudo rm -f $INSTALL_SHARE/ebaf_dash.py
+sudo rm -f $INSTALL_BIN/ebaf-*
+print_info "Removing Configuration files"
+sudo rm -rf $INSTALL_BIN/$WHITELIST
+sudo rm -rf $INSTALL_BIN/$BLACKLIST
+print_info "Removing Directories"
+sudo rm -rf $INSTALL_SHARE
+print_info "Removing Temproary files"
+sudo rm -f /tmp/ebaf-*
+
+printf "\n${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n"
+printf "${WHITE}${BOLD}                      UNINSTALLATION COMPLETED!                               ${NC}\n"
+printf "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n"
+printf "${CYAN}  eBAF has been successfully removed from your system${NC}\n"
+printf "${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n\n"

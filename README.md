@@ -83,7 +83,7 @@ curl -sSL https://raw.githubusercontent.com/Kazedaa/eBAF/main/uninstall.sh | sud
 ```
 
 
-## Installing Dependencies (for devs)
+## Dev Install
 Run the following commands to install the required dependencies:
 ### Ubuntu/Debian
 ```bash
