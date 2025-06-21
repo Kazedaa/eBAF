@@ -124,17 +124,27 @@ ask_spotify_integration() {
     printf "${YELLOW}${BOLD}Note:${NC} This requires sudo permissions for eBAF to run automatically.\n"
     printf "A sudoers rule will be created to allow passwordless eBAF execution.\n\n"
     
+    # Check for environment variable override
+    if [ "${EBAF_ENABLE_SPOTIFY:-}" = "yes" ]; then
+        printf "${GREEN}${BOLD}Spotify integration enabled via environment variable.${NC}\n"
+        return 0
+    elif [ "${EBAF_ENABLE_SPOTIFY:-}" = "no" ]; then
+        printf "${YELLOW}${BOLD}Spotify integration disabled via environment variable.${NC}\n"
+        return 1
+    fi
+    
     # Check if stdin is connected to a terminal
     if [ ! -t 0 ]; then
         printf "${YELLOW}${BOLD}Running in non-interactive mode (piped from curl/wget).${NC}\n"
         printf "${CYAN}Spotify integration will be ${WHITE}DISABLED${CYAN} by default.${NC}\n"
-        printf "${CYAN}You can re-run the installer interactively to enable it later.${NC}\n\n"
+        printf "${CYAN}To enable it, use: ${WHITE}EBAF_ENABLE_SPOTIFY=yes curl ... | sudo -E bash${NC}\n"
+        printf "${CYAN}Or download and run the script interactively.${NC}\n\n"
         return 1  # Skip integration
     fi
     
     while true; do
         printf "${CYAN}${BOLD}Do you want to enable Spotify integration? [y/N]: ${NC}"
-        read -r response < /dev/tty  # Force reading from terminal
+        read -r response < /dev/tty
         
         case $response in
             [Yy]|[Yy][Ee][Ss])
@@ -149,7 +159,6 @@ ask_spotify_integration() {
         esac
     done
 }
-
 setup_spotify_integration() {
     print_section "SPOTIFY INTEGRATION SETUP"
     print_info "Setting up automatic Spotify integration..."

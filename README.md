@@ -75,8 +75,11 @@ curl --version
 ```
 ### Install
 ```bash
-curl -sSL https://raw.githubusercontent.com/Kazedaa/eBAF/main/install.sh | sudo bash
-```
+# Enable Spotify integration via environment variable
+EBAF_ENABLE_SPOTIFY=yes curl -sSL https://github.com/Kazedaa/eBAF/raw/main/install.sh | sudo -E bash
+
+# Disable explicitly
+EBAF_ENABLE_SPOTIFY=no curl -sSL https://github.com/Kazedaa/eBAF/raw/main/install.sh | sudo bash```
 ### Uninstall
 ```bash
 curl -sSL https://raw.githubusercontent.com/Kazedaa/eBAF/main/uninstall.sh | sudo bash
