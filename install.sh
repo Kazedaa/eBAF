@@ -113,7 +113,8 @@ cleanup() {
 }
 
 detect_admin_group() {
-    local user=${1:-$USER}
+    # Use SUDO_USER if available (the actual user who ran sudo), otherwise fall back to $USER
+    local user=${1:-${SUDO_USER:-$USER}}
     
     # Check if user is in common admin groups, in order of preference
     local admin_groups=("wheel" "sudo" "admin")
@@ -199,11 +200,11 @@ validate_sudoers_compatibility() {
         
         # Detect distribution and show appropriate command
         if command -v apt-get &> /dev/null; then
-            printf "${CYAN}  Ubuntu/Debian: ${WHITE}sudo usermod -aG sudo $USER${NC}\n"
+            printf "${CYAN}  Ubuntu/Debian: ${WHITE}sudo usermod -aG sudo ${SUDO_USER:-$USER}${NC}\n"
         elif command -v pacman &> /dev/null; then
-            printf "${CYAN}  Arch: ${WHITE}sudo usermod -aG wheel $USER${NC}\n"
+            printf "${CYAN}  Arch: ${WHITE}sudo usermod -aG wheel ${SUDO_USER:-$USER}${NC}\n"
         elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
-            printf "${CYAN}  RHEL/CentOS/Fedora: ${WHITE}sudo usermod -aG wheel $USER${NC}\n"
+            printf "${CYAN}  RHEL/CentOS/Fedora: ${WHITE}sudo usermod -aG wheel ${SUDO_USER:-$USER}${NC}\n"
         fi
         
         printf "${YELLOW}After adding to group, log out and back in, then re-run installer.${NC}\n"
