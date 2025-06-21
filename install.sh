@@ -133,15 +133,6 @@ ask_spotify_integration() {
         return 1
     fi
     
-    # Check if stdin is connected to a terminal
-    if [ ! -t 0 ]; then
-        printf "${YELLOW}${BOLD}Running in non-interactive mode (piped from curl/wget).${NC}\n"
-        printf "${CYAN}Spotify integration will be ${WHITE}DISABLED${CYAN} by default.${NC}\n"
-        printf "${CYAN}To enable it, use: ${WHITE}EBAF_ENABLE_SPOTIFY=yes curl ... | sudo -E bash${NC}\n"
-        printf "${CYAN}Or download and run the script interactively.${NC}\n\n"
-        return 1  # Skip integration
-    fi
-    
     while true; do
         printf "${CYAN}${BOLD}Do you want to enable Spotify integration? [y/N]: ${NC}"
         read -r response < /dev/tty
