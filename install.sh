@@ -117,10 +117,9 @@ detect_admin_group() {
     
     # Check if user is in common admin groups, in order of preference
     local admin_groups=("wheel" "sudo" "admin")
-    local user_groups=$(groups "$user" 2>/dev/null | sed 's/^[^:]*: //' | tr ' ' '\n')
     
     for group in "${admin_groups[@]}"; do
-        if echo "$user_groups" | grep -q "^$group$"; then
+        if groups "$user" 2>/dev/null | grep -q "\b$group\b"; then
             echo "$group"
             return 0
         fi
