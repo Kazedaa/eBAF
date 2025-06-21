@@ -124,9 +124,17 @@ ask_spotify_integration() {
     printf "${YELLOW}${BOLD}Note:${NC} This requires sudo permissions for eBAF to run automatically.\n"
     printf "A sudoers rule will be created to allow passwordless eBAF execution.\n\n"
     
+    # Check if stdin is connected to a terminal
+    if [ ! -t 0 ]; then
+        printf "${YELLOW}${BOLD}Running in non-interactive mode (piped from curl/wget).${NC}\n"
+        printf "${CYAN}Spotify integration will be ${WHITE}DISABLED${CYAN} by default.${NC}\n"
+        printf "${CYAN}You can re-run the installer interactively to enable it later.${NC}\n\n"
+        return 1  # Skip integration
+    fi
+    
     while true; do
         printf "${CYAN}${BOLD}Do you want to enable Spotify integration? [y/N]: ${NC}"
-        read -r response
+        read -r response < /dev/tty  # Force reading from terminal
         
         case $response in
             [Yy]|[Yy][Ee][Ss])
