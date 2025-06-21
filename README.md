@@ -74,7 +74,7 @@ git --version
 curl --version
 ```
 ### Install
-#### Enable Spotify integration via environment variable
+#### Enable Spotify integration (Recommended)
 ```bash
 EBAF_ENABLE_SPOTIFY=yes curl -sSL https://github.com/Kazedaa/eBAF/raw/main/install.sh | sudo -E bash
 ```
