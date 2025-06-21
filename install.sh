@@ -119,7 +119,7 @@ detect_admin_group() {
     local admin_groups=("wheel" "sudo" "admin")
     
     for group in "${admin_groups[@]}"; do
-        if groups "$user" 2>/dev/null | grep -q "\b$group\b"; then
+        if id -nG "$user" 2>/dev/null | tr ' ' '\n' | grep -q "^${group}$"; then
             echo "$group"
             return 0
         fi
