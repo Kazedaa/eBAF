@@ -122,7 +122,7 @@ detect_distribution() {
             arch|manjaro)
                 echo "arch" 
                 ;;
-            fedora|centos|rhel|rocky|)
+            fedora|centos|rhel|rocky)
                 echo "redhat"
                 ;;
             *)
