@@ -1,2 +1,8 @@
 # Allow users to run eBAF without password for Spotify integration
-%sudo ALL=(ALL) NOPASSWD: /usr/local/bin/ebaf, /usr/bin/pkill -f ebaf, /usr/bin/pkill -P *
+# Distribution-agnostic: supports both Ubuntu/Debian (sudo) and Arch (wheel)
+%sudo ALL=(ALL) NOPASSWD: /usr/local/bin/ebaf
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/pkill -f ebaf
+%sudo ALL=(ALL) NOPASSWD: /usr/bin/pkill -P [0-9]*
+%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/ebaf
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/pkill -f ebaf
+%wheel ALL=(ALL) NOPASSWD: /usr/bin/pkill -P [0-9]*

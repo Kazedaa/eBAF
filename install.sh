@@ -112,6 +112,28 @@ cleanup() {
     fi
 }
 
+detect_distribution() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        case "$ID" in
+            ubuntu|debian)
+                echo "debian"
+                ;;
+            arch|manjaro)
+                echo "arch" 
+                ;;
+            fedora|centos|rhel|rocky|almalinux)
+                echo "redhat"
+                ;;
+            *)
+                echo "unknown"
+                ;;
+        esac
+    else
+        echo "unknown"
+    fi
+}
+
 ask_spotify_integration() {
     print_section "SPOTIFY INTEGRATION OPTION"
     printf "${BLUE}${BOLD}Spotify Auto-Start Integration${NC}\n"
@@ -120,7 +142,18 @@ ask_spotify_integration() {
     printf "  • Stop eBAF when Spotify closes\n"
     printf "  • Enable web dashboard at http://localhost:8080\n"
     printf "  • Wait for eBAF to initialize before Spotify starts\n\n"
-    
+
+    local admin_group
+    if admin_group=$(detect_admin_group 2>/dev/null); then
+        printf "${GREEN}${BOLD}✓${NC} User is in admin group: ${WHITE}$admin_group${NC}\n"
+    else
+        printf "${RED}${BOLD}✗${NC} User not in admin group. Required groups by distribution:\n"
+        printf "  • Ubuntu/Debian: ${WHITE}sudo${NC}\n"
+        printf "  • Arch: ${WHITE}wheel${NC}\n"  
+        printf "  • RHEL/CentOS/Fedora: ${WHITE}wheel${NC}\n\n"
+        printf "${YELLOW}Please add user to appropriate group and re-run installer.${NC}\n\n"
+    fi
+
     printf "${YELLOW}${BOLD}Note:${NC} This requires sudo permissions for eBAF to run automatically.\n"
     printf "A sudoers rule will be created to allow passwordless eBAF execution.\n\n"
     
@@ -150,8 +183,99 @@ ask_spotify_integration() {
         esac
     done
 }
+
+detect_admin_group() {
+    local user=${1:-$USER}
+    
+    # Check if user is in common admin groups, in order of preference
+    local admin_groups=("wheel" "sudo" "admin")
+    local user_groups=$(groups "$user" 2>/dev/null | tr ' ' '\n')
+    
+    for group in "${admin_groups[@]}"; do
+        if echo "$user_groups" | grep -q "^$group$"; then
+            echo "$group"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+validate_sudoers_compatibility() {
+    print_section "SUDOERS COMPATIBILITY CHECK"
+    
+    # Detect the user's admin group
+    local admin_group
+    if admin_group=$(detect_admin_group); then
+        print_status "User is in admin group: $admin_group"
+        
+        # Check if the sudoers file supports this group
+        if grep -q "%$admin_group" "$TEMP_DIR/src/sudoers/ebaf-spotify"; then
+            print_status "Sudoers file supports $admin_group group"
+        else
+            print_warning "Sudoers file missing support for $admin_group group"
+            print_info "This shouldn't happen with the updated sudoers file"
+        fi
+    else
+        print_error "User is not in any recognized admin group (wheel, sudo, admin)"
+        print_info "Please add user to appropriate admin group:"
+        
+        # Detect distribution and show appropriate command
+        if command -v apt-get &> /dev/null; then
+            printf "${CYAN}  Ubuntu/Debian: ${WHITE}sudo usermod -aG sudo $USER${NC}\n"
+        elif command -v pacman &> /dev/null; then
+            printf "${CYAN}  Arch: ${WHITE}sudo usermod -aG wheel $USER${NC}\n"
+        elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+            printf "${CYAN}  RHEL/CentOS/Fedora: ${WHITE}sudo usermod -aG wheel $USER${NC}\n"
+        fi
+        
+        printf "${YELLOW}After adding to group, log out and back in, then re-run installer.${NC}\n"
+        return 1
+    fi
+    
+    return 0
+}
+
 setup_spotify_integration() {
     print_section "SPOTIFY INTEGRATION SETUP"
+
+    # Validate sudoers compatibility first
+    if ! validate_sudoers_compatibility; then
+        print_error "Cannot set up Spotify integration - user not in admin group"
+        return 1
+    fi
+    
+    print_info "Installing sudoers configuration..."
+    
+    # Check for existing user-specific sudoers files that might conflict
+    if ls /etc/sudoers.d/0* 2>/dev/null | grep -v ebaf >/dev/null; then
+        print_warning "Found existing user-specific sudoers files:"
+        ls /etc/sudoers.d/0* 2>/dev/null | while read file; do
+            printf "${YELLOW}    $(basename "$file")${NC}\n"
+        done
+        print_info "The eBAF sudoers rules should still work, but conflicts are possible"
+    fi
+    
+    # Install sudoers file with validation
+    sudo cp "$TEMP_DIR/src/sudoers/ebaf-spotify" /etc/sudoers.d/ebaf-spotify
+    sudo chmod 440 /etc/sudoers.d/ebaf-spotify
+    
+    # Validate the sudoers file
+    if ! sudo visudo -c -f /etc/sudoers.d/ebaf-spotify >/dev/null 2>&1; then
+        print_error "Invalid sudoers syntax! Rolling back..."
+        sudo rm -f /etc/sudoers.d/ebaf-spotify
+        return 1
+    fi
+    
+    # Test that sudo still works after installation
+    if ! sudo -v >/dev/null 2>&1; then
+        print_error "sudo broken after sudoers installation! Rolling back..."
+        sudo rm -f /etc/sudoers.d/ebaf-spotify
+        return 1
+    fi
+    
+    print_status "Sudoers configuration installed successfully"
+
     print_info "Setting up automatic Spotify integration..."
     
     # Get the script directory
