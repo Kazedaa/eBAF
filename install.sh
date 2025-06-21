@@ -112,28 +112,6 @@ cleanup() {
     fi
 }
 
-detect_distribution() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        case "$ID" in
-            ubuntu|debian)
-                echo "debian"
-                ;;
-            arch|manjaro)
-                echo "arch" 
-                ;;
-            fedora|centos|rhel|rocky)
-                echo "redhat"
-                ;;
-            *)
-                echo "unknown"
-                ;;
-        esac
-    else
-        echo "unknown"
-    fi
-}
-
 detect_admin_group() {
     local user=${1:-$USER}
     
