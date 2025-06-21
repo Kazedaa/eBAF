@@ -122,7 +122,7 @@ detect_distribution() {
             arch|manjaro)
                 echo "arch" 
                 ;;
-            fedora|centos|rhel|rocky|almalinux)
+            fedora|centos|rhel|rocky|)
                 echo "redhat"
                 ;;
             *)
@@ -132,6 +132,23 @@ detect_distribution() {
     else
         echo "unknown"
     fi
+}
+
+detect_admin_group() {
+    local user=${1:-$USER}
+    
+    # Check if user is in common admin groups, in order of preference
+    local admin_groups=("wheel" "sudo" "admin")
+    local user_groups=$(groups "$user" 2>/dev/null | tr ' ' '\n')
+    
+    for group in "${admin_groups[@]}"; do
+        if echo "$user_groups" | grep -q "^$group$"; then
+            echo "$group"
+            return 0
+        fi
+    done
+    
+    return 1
 }
 
 ask_spotify_integration() {
@@ -182,23 +199,6 @@ ask_spotify_integration() {
                 ;;
         esac
     done
-}
-
-detect_admin_group() {
-    local user=${1:-$USER}
-    
-    # Check if user is in common admin groups, in order of preference
-    local admin_groups=("wheel" "sudo" "admin")
-    local user_groups=$(groups "$user" 2>/dev/null | tr ' ' '\n')
-    
-    for group in "${admin_groups[@]}"; do
-        if echo "$user_groups" | grep -q "^$group$"; then
-            echo "$group"
-            return 0
-        fi
-    done
-    
-    return 1
 }
 
 validate_sudoers_compatibility() {

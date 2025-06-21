@@ -111,8 +111,8 @@ remove_spotify_integration() {
     
     # Remove systemd service files
     print_info "Removing service files..."
-    sudo rm -f /etc/systemd/user/ebaf-spotify.service
-    sudo rm -f /usr/local/bin/ebaf-spotify-monitor
+    sudo rm -f /etc/systemd/user/ebaf-spotify.service 2>/dev/null || true
+    sudo rm -f /usr/local/bin/ebaf-spotify-monitor 2>/dev/null || true
     
     # Remove sudoers configuration
     print_info "Removing sudo configuration..."
