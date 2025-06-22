@@ -53,22 +53,21 @@ stop_ebaf() {
 # Main monitoring loop
 log "Starting Spotify monitor..."
 
+ebaf_running=false
+
 while true; do
-    # Check if Spotify is running
-    if pgrep -x "spotify" > /dev/null || pgrep -f "spotify" > /dev/null; then
-        if [ "$SPOTIFY_RUNNING" = false ]; then
-            log "Spotify detected, starting eBAF..."
-            if start_ebaf; then
-                SPOTIFY_RUNNING=true
-            fi
+    if pgrep -x "spotify" > /dev/null; then
+        if [ "$ebaf_running" = false ]; then
+            start_ebaf
+            sleep 30
+            ebaf_running=true
         fi
     else
-        if [ "$SPOTIFY_RUNNING" = true ]; then
-            log "Spotify closed, stopping eBAF..."
+        if [ "$ebaf_running" = true ]; then
             stop_ebaf
-            SPOTIFY_RUNNING=false
+            sleep 30
+            ebaf_running=false
         fi
     fi
-    
-    sleep 5
+    sleep 2
 done
