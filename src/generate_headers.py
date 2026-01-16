@@ -73,6 +73,9 @@ def process_ip_or_domain(line, whitelist_patterns):
         _, _, ip_addresses = socket.gethostbyname_ex(line)
         results = []
         for ip in ip_addresses:
+            if ip.startswith("127."):
+                print(f"Skipping loopback IP {ip} for domain {line}", file=open("build_logs.log", "a"))
+                continue
             ip_int = ip_to_int(ip)
             if ip_int:
                 results.append((ip_int, f"{line} ({ip})"))
