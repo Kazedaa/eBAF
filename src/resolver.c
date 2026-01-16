@@ -186,6 +186,12 @@ static int resolve_domain_to_ip(const char *domain, __u32 *ip, int map_fd) {
     for (int i = 0; addr_list[i] != NULL; i++) {
         // Get each IP address and convert from network to host byte order.
         __u32 host_ip = ntohl(addr_list[i]->s_addr);
+
+        if ((host_ip >> 24) == 0x7F) {
+            printf("Skipping loopback IP for domain %s\n", domain);
+            continue;
+        }
+
         *ip = host_ip;
 
         // Add IP to domain's IP list
