@@ -127,6 +127,20 @@ int xdp_blocker(struct xdp_md *ctx) {
     if ((void *)ip + sizeof(*ip) > data_end)
         return XDP_PASS;
 
+    // 127.0.0.0/8 in Network Byte Order check.
+    // 0x7F is 127. We check if the first byte (in network order) is 127.
+    // We use bpf_htonl to ensure the constant matches the network byte order of the packet.
+    
+    // Check Source IP (Allow traffic FROM localhost)
+    if ((ip->saddr & bpf_htonl(0xFF000000)) == bpf_htonl(0x7F000000)) {
+        return XDP_PASS;
+    }
+
+    // Check Destination IP (Allow traffic TO localhost)
+    if ((ip->daddr & bpf_htonl(0xFF000000)) == bpf_htonl(0x7F000000)) {
+        return XDP_PASS;
+    }
+
     // Priority check: Check whitelist first before blacklist
     // If IP is whitelisted, always allow the packet to pass through
     __u64 *whitelist_ptr_daddr = bpf_map_lookup_elem(&whitelist_ip_map, &ip->daddr);
