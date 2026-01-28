@@ -1,3 +1,34 @@
+
+<div align="right">
+  <details>
+    <summary >🌐 Language</summary>
+    <div>
+      <div align="right">
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=en">English</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=zh-CN">简体中文</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=zh-TW">繁體中文</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=ja">日本語</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=ko">한국어</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=hi">हिन्दी</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=th">ไทย</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=fr">Français</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=de">Deutsch</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=es">Español</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=it">Itapano</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=ru">Русский</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=pt">Português</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=nl">Nederlands</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=pl">Polski</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=ar">العربية</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=fa">فارسی</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=tr">Türkçe</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=vi">Tiếng Việt</a></p>
+        <p><a href="https://openaitx.github.io/view.html?user=Kazedaa&project=eBAF&lang=id">Bahasa Indonesia</a></p>
+      </div>
+    </div>
+  </details>
+</div>
+
 # eBAF - eBPF Based Ad Firewall
 <p align="center">
     <img src="assets/banner.png" alt="eBAF - eBPF Ad Firewall Banner" width="600"/>
