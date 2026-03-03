@@ -112,22 +112,7 @@ cleanup() {
     fi
 }
 
-detect_admin_group() {
-    # Use SUDO_USER if available (the actual user who ran sudo), otherwise fall back to $USER
-    local user=${1:-${SUDO_USER:-$USER}}
-    
-    # Check if user is in common admin groups, in order of preference
-    local admin_groups=("wheel" "sudo" "admin")
-    
-    for group in "${admin_groups[@]}"; do
-        if id -nG "$user" 2>/dev/null | tr ' ' '\n' | grep -q "^${group}$"; then
-            echo "$group"
-            return 0
-        fi
-    done
-    
-    return 1
-}
+
 
 ask_spotify_integration() {
     print_section "SPOTIFY INTEGRATION OPTION"
@@ -149,8 +134,7 @@ ask_spotify_integration() {
         printf "${YELLOW}Please add user to appropriate group and re-run installer.${NC}\n\n"
     fi
 
-    printf "${YELLOW}${BOLD}Note:${NC} This requires sudo permissions for eBAF to run automatically.\n"
-    printf "A sudoers rule will be created to allow passwordless eBAF execution.\n\n"
+    printf "${YELLOW}${BOLD}Note:${NC} This will install a background system service to monitor for Spotify.\n\n"
     
     # Check for environment variable override
     if [ "${EBAF_ENABLE_SPOTIFY:-}" = "yes" ]; then
@@ -179,146 +163,41 @@ ask_spotify_integration() {
     done
 }
 
-validate_sudoers_compatibility() {
-    print_section "SUDOERS COMPATIBILITY CHECK"
-    
-    # Detect the user's admin group
-    local admin_group
-    if admin_group=$(detect_admin_group); then
-        print_status "User is in admin group: $admin_group"
-        
-        # Check if the sudoers file supports this group
-        if grep -q "%$admin_group" "$TEMP_DIR/src/sudoers/ebaf-spotify"; then
-            print_status "Sudoers file supports $admin_group group"
-        else
-            print_warning "Sudoers file missing support for $admin_group group"
-            print_info "This shouldn't happen with the updated sudoers file"
-        fi
-    else
-        print_error "User is not in any recognized admin group (wheel, sudo, admin)"
-        print_info "Please add user to appropriate admin group:"
-        
-        # Detect distribution and show appropriate command
-        if command -v apt-get &> /dev/null; then
-            printf "${CYAN}  Ubuntu/Debian: ${WHITE}sudo usermod -aG sudo ${SUDO_USER:-$USER}${NC}\n"
-        elif command -v pacman &> /dev/null; then
-            printf "${CYAN}  Arch: ${WHITE}sudo usermod -aG wheel ${SUDO_USER:-$USER}${NC}\n"
-        elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
-            printf "${CYAN}  RHEL/CentOS/Fedora: ${WHITE}sudo usermod -aG wheel ${SUDO_USER:-$USER}${NC}\n"
-        fi
-        
-        printf "${YELLOW}After adding to group, log out and back in, then re-run installer.${NC}\n"
-        return 1
-    fi
-    
-    return 0
-}
+
 
 setup_spotify_integration() {
     print_section "SPOTIFY INTEGRATION SETUP"
-
-    # Validate sudoers compatibility first
-    if ! validate_sudoers_compatibility; then
-        print_error "Cannot set up Spotify integration - user not in admin group"
-        return 1
-    fi
+    print_info "Setting up automatic Spotify integration as a system service..."
     
-    print_info "Installing sudoers configuration..."
-    
-    # Check for existing user-specific sudoers files that might conflict
-    if ls /etc/sudoers.d/0* 2>/dev/null | grep -v ebaf >/dev/null; then
-        print_warning "Found existing user-specific sudoers files:"
-        ls /etc/sudoers.d/0* 2>/dev/null | while read file; do
-            printf "${YELLOW}    $(basename "$file")${NC}\n"
-        done
-        print_info "The eBAF sudoers rules should still work, but conflicts are possible"
-    fi
-    
-    # Install sudoers file with validation
-    sudo cp "$TEMP_DIR/src/sudoers/ebaf-spotify" /etc/sudoers.d/ebaf-spotify
-    sudo chmod 440 /etc/sudoers.d/ebaf-spotify
-    
-    # Validate the sudoers file
-    if ! sudo visudo -c -f /etc/sudoers.d/ebaf-spotify >/dev/null 2>&1; then
-        print_error "Invalid sudoers syntax! Rolling back..."
-        sudo rm -f /etc/sudoers.d/ebaf-spotify
-        return 1
-    fi
-    
-    # Test that sudo still works after installation
-    if ! sudo -v >/dev/null 2>&1; then
-        print_error "sudo broken after sudoers installation! Rolling back..."
-        sudo rm -f /etc/sudoers.d/ebaf-spotify
-        return 1
-    fi
-    
-    print_status "Sudoers configuration installed successfully"
-
-    print_info "Setting up automatic Spotify integration..."
-    
-    # Get the script directory
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    # Install the monitor script
-    print_info "Installing Spotify monitor service..."
+    # Install monitor script
+    print_info "Installing Spotify monitor service script..."
     sudo cp "$SCRIPT_DIR/src/scripts/ebaf-spotify-monitor.sh" /usr/local/bin/ebaf-spotify-monitor
     sudo chmod +x /usr/local/bin/ebaf-spotify-monitor
     
-    # Install systemd user service
-    print_info "Creating systemd user service..."
-    sudo cp "$SCRIPT_DIR/src/systemd/ebaf-spotify.service" /etc/systemd/user/ebaf-spotify.service
+    # Install the systemd service
+    print_info "Creating systemd service..."
+    sudo cp "$SCRIPT_DIR/src/systemd/ebaf-spotify.service" /etc/systemd/system/ebaf-spotify.service
     
-    # Install sudoers configuration
-    print_info "Configuring sudo permissions..."
-    sudo cp "$SCRIPT_DIR/src/sudoers/ebaf-spotify" /etc/sudoers.d/ebaf-spotify
-    sudo chmod 440 /etc/sudoers.d/ebaf-spotify
-    
-    # Validate sudoers file
-    if ! sudo visudo -c -f /etc/sudoers.d/ebaf-spotify; then
-        print_error "Invalid sudoers configuration! Removing file..."
+    # Clean up any old sudoers files from previous insecure installations
+    if [ -f "/etc/sudoers.d/ebaf-spotify" ]; then
+        print_info "Cleaning up old insecure sudoers configuration..."
         sudo rm -f /etc/sudoers.d/ebaf-spotify
-        return 1
     fi
+
+    # 4. Enable and start the system service
+    print_info "Enabling and starting service..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable ebaf-spotify.service
     
-    # Enable the service for the current user
-    print_info "Enabling service for current user..."
-    
-    # Get the actual user (not root)
-    ACTUAL_USER="${SUDO_USER:-$USER}"
-    
-    if [ "$ACTUAL_USER" != "root" ]; then
-        # Only reload user daemon, not system daemon
-        print_info "Reloading user systemd daemon (this won't affect system services)..."
-        sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user daemon-reload
-        
-        # Enable and start the service
-        sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user enable ebaf-spotify.service
-        
-        # Start the service
-        print_info "Starting Spotify integration service..."
-        if sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user start ebaf-spotify.service; then
-            print_status "Spotify integration enabled for user: $ACTUAL_USER"
-            print_info "eBAF will now automatically start when Spotify is opened"
-            print_info "Web dashboard available at: http://localhost:8080"
-            
-            # Check service status
-            sleep 2
-            if sudo -u "$ACTUAL_USER" XDG_RUNTIME_DIR="/run/user/$(id -u $ACTUAL_USER)" systemctl --user is-active --quiet ebaf-spotify.service; then
-                print_status "Service is running successfully"
-            else
-                print_warning "Service may not have started correctly. Check with:"
-                print_info "  systemctl --user status ebaf-spotify.service"
-            fi
-        else
-            print_error "Failed to start Spotify integration service"
-            print_info "You can try starting it manually with:"
-            print_info "  systemctl --user start ebaf-spotify.service"
-        fi
+    if sudo systemctl start ebaf-spotify.service; then
+        print_status "Spotify integration successfully enabled!"
+        print_info "eBAF will now automatically start when Spotify is opened"
+        print_info "Web dashboard will be available at: http://localhost:8080 when running"
     else
-        print_warning "Running as root - please enable the service manually after installation:"
-        print_info "  systemctl --user daemon-reload"
-        print_info "  systemctl --user enable ebaf-spotify.service"
-        print_info "  systemctl --user start ebaf-spotify.service"
+        print_error "Failed to start Spotify integration service"
+        print_info "Check logs with: sudo journalctl -u ebaf-spotify.service"
     fi
 }
 
