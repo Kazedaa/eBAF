@@ -41,7 +41,7 @@ stop_ebaf() {
         log "Stopping eBAF..."
         kill $EBAF_PID 2>/dev/null
         pkill -P $EBAF_PID 2>/dev/null
-        pkill -f "ebaf" 2>/dev/null
+        pkill -x "ebaf-core" 2>/dev/null  # Only kill the exact C binary!
         EBAF_PID=""
         log "eBAF stopped"
     fi

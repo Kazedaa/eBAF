@@ -16,26 +16,7 @@ NC='\033[0m' # No Color
 INSTALL_BIN="/usr/local/bin"
 INSTALL_SHARE="/usr/local/share/ebaf"
 
-WHITELIST="whitelist.txt"
-BLACKLIST="blacklist.txt"
-
-# Progress bar function
-show_progress() {
-    local duration=$1
-    local message=$2
-    printf "${CYAN}${message}${NC}"
-    
-    for ((i=0; i<=20; i++)); do
-        printf "${RED}█${NC}"
-        sleep $(echo "scale=2; $duration/20" | bc -l 2>/dev/null || echo "0.1")
-    done
-    printf " ${GREEN}DONE${NC}\n"
-}
-
-
 print_header() {
-    printf "${NC}"
-    printf "${NC}"
     printf "${GREEN}${BOLD}"
     cat << 'EOF'
                    ███████╗  ██████╗    █████╗   ███████╗
@@ -51,35 +32,13 @@ EOF
     printf "${PURPLE}══════════════════════════════════════════════════════════════════════════════════${NC}\n\n"
 }
 
-# Print section header
 print_section() {
     printf "\n${BLUE}${BOLD}▶ $1${NC}\n"
     printf "${BLUE}────────────────────────────────────────────────────────────────────────────────${NC}\n"
 }
 
-# Print status messages
-print_status() {
-    printf "${GREEN}  ✓ ${NC}$1\n"
-}
-
-print_warning() {
-    printf "${YELLOW}  ⚠ ${NC}$1\n"
-}
-
-print_error() {
-    printf "${RED}  ✗ ${NC}$1\n"
-}
-
-print_info() {
-    printf "${CYAN}  ➤ ${NC}$1\n"
-}
-
-cleanup() {
-    if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
-        print_info "Cleaning up temporary directory..."
-        rm -rf "$TEMP_DIR"
-    fi
-}
+print_status() { printf "${GREEN}  ✓ ${NC}$1\n"; }
+print_info() { printf "${CYAN}  ➤ ${NC}$1\n"; }
 
 remove_spotify_integration() {
     print_section "REMOVING SPOTIFY INTEGRATION"
@@ -91,27 +50,23 @@ remove_spotify_integration() {
     
     print_info "Cleaning up Spotify integration components..."
     
-    # Stop and disable the system service
+    # Safely stop and disable the system service
     print_info "Stopping Spotify integration service..."
     sudo systemctl stop ebaf-spotify.service 2>/dev/null || true
     sudo systemctl disable ebaf-spotify.service 2>/dev/null || true
     
-    # Remove systemd service files
     print_info "Removing service files..."
-    sudo rm -f /etc/systemd/system/ebaf-spotify.service 2>/dev/null || true
-    sudo rm -f /usr/local/bin/ebaf-spotify-monitor 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/ebaf-spotify.service
+    sudo rm -f /usr/local/bin/ebaf-spotify-monitor
     
-    # Remove legacy sudoers file just in case
+    # Remove old legacy sudoers file just in case it exists
     sudo rm -f /etc/sudoers.d/ebaf-spotify 2>/dev/null || true
     
-    # Reload systemd
-    sudo systemctl daemon-reload 2>/dev/null || true
+    print_info "Reloading systemd daemon..."
+    sudo systemctl daemon-reload
     
     print_status "Spotify integration removed successfully"
 }
-
-# Set up cleanup trap
-trap cleanup EXIT
 
 print_header
 
@@ -119,19 +74,13 @@ remove_spotify_integration
 
 print_section "UNINSTALLATION PROCESS"
 
-show_progress 5 "Removing eBAF files and directories... "
-print_info "Removing Binaries"
-sudo rm -f $INSTALL_BIN/adblocker $INSTALL_BIN/ebaf
-print_info "Removing Data Files"
-sudo rm -f $INSTALL_SHARE/adblocker.bpf.o
-sudo rm -f $INSTALL_SHARE/ebaf_dash.py
-sudo rm -f $INSTALL_BIN/ebaf-*
-print_info "Removing Configuration files"
-sudo rm -rf $INSTALL_BIN/$WHITELIST
-sudo rm -rf $INSTALL_BIN/$BLACKLIST
-print_info "Removing Directories"
+print_info "Removing Binaries..."
+sudo rm -f $INSTALL_BIN/ebaf-core $INSTALL_BIN/ebaf $INSTALL_BIN/ebaf_dash.py
+
+print_info "Removing Application Data & Lists..."
 sudo rm -rf $INSTALL_SHARE
-print_info "Removing Temproary files"
+
+print_info "Removing Temporary Tracking Files..."
 sudo rm -f /tmp/ebaf-*
 
 printf "\n${GREEN}${BOLD}══════════════════════════════════════════════════════════════════════════════════${NC}\n"
