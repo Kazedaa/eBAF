@@ -114,36 +114,36 @@ cleanup() {
 
 
 
-ask_spotify_integration() {
-    print_section "SPOTIFY INTEGRATION OPTION"
-    printf "${BLUE}${BOLD}Spotify Auto-Start Integration${NC}\n"
+ask_service_integration() {
+    print_section "BACKGROUND SERVICE OPTION"
+    printf "${BLUE}${BOLD}Always-On Background Service${NC}\n"
     printf "${GREEN}This feature will:${NC}\n"
-    printf "  • Automatically start eBAF when Spotify opens\n"
-    printf "  • Stop eBAF when Spotify closes\n"
-    printf "  • Enable web dashboard at http://localhost:8080\n"
-    printf "  • Wait for eBAF to initialize before Spotify starts\n\n"
+    printf "  • Automatically start eBAF on boot\n"
+    printf "  • Keep the firewall running efficiently in the background\n"
+    printf "  • Prevent any ads from slipping through when Spotify launches\n"
+    printf "  • Enable web dashboard at http://localhost:8080\n\n"
 
-    printf "${YELLOW}${BOLD}Note:${NC} This will install a background system service to monitor for Spotify.\n\n"
+    printf "${YELLOW}${BOLD}Note:${NC} This will install a standard systemd service.\n\n"
     
     # Check for environment variable override
-    if [ "${EBAF_ENABLE_SPOTIFY:-}" = "yes" ]; then
-        printf "${GREEN}${BOLD}Spotify integration enabled via environment variable.${NC}\n"
+    if [ "${EBAF_ENABLE_SERVICE:-}" = "yes" ]; then
+        printf "${GREEN}${BOLD}Background service enabled via environment variable.${NC}\n"
         return 0
-    elif [ "${EBAF_ENABLE_SPOTIFY:-}" = "no" ]; then
-        printf "${YELLOW}${BOLD}Spotify integration disabled via environment variable.${NC}\n"
+    elif [ "${EBAF_ENABLE_SERVICE:-}" = "no" ]; then
+        printf "${YELLOW}${BOLD}Background service disabled via environment variable.${NC}\n"
         return 1
     fi
     
     while true; do
-        printf "${CYAN}${BOLD}Do you want to enable Spotify integration? [y/N]: ${NC}"
+        printf "${CYAN}${BOLD}Do you want to enable the always-on background service? [y/N]: ${NC}"
         read -r response < /dev/tty
         
         case $response in
             [Yy]|[Yy][Ee][Ss])
-                return 0  # Yes, enable integration
+                return 0  # Yes, enable service
                 ;;
             [Nn]|[Nn][Oo]|"")
-                return 1  # No, skip integration
+                return 1  # No, skip service
                 ;;
             *)
                 printf "${RED}Please answer yes (y) or no (n).${NC}\n"
@@ -154,32 +154,27 @@ ask_spotify_integration() {
 
 
 
-setup_spotify_integration() {
-    print_section "SPOTIFY INTEGRATION SETUP"
-    print_info "Setting up automatic Spotify integration as a system service..."
+setup_service_integration() {
+    print_section "BACKGROUND SERVICE SETUP"
+    print_info "Setting up eBAF as an always-on system service..."
     
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    # Install monitor script
-    print_info "Installing Spotify monitor service script..."
-    sudo cp "$SCRIPT_DIR/src/scripts/ebaf-spotify-monitor.sh" /usr/local/bin/ebaf-spotify-monitor
-    sudo chmod +x /usr/local/bin/ebaf-spotify-monitor
-    
-    # Install the systemd services
+    # Install the systemd service
     print_info "Creating systemd service..."
     sudo cp "$SCRIPT_DIR/src/systemd/ebaf.service" /etc/systemd/system/ebaf.service
 
-    # 4. Enable and start the system service
+    # Enable and start the system service
     print_info "Enabling and starting service..."
     sudo systemctl daemon-reload
-    sudo systemctl disable ebaf.service
+    sudo systemctl enable ebaf.service
     
     if sudo systemctl start ebaf.service; then
-        print_status "Spotify integration successfully enabled!"
-        print_info "eBAF will now automatically start when Spotify is opened"
-        print_info "Web dashboard will be available at: http://localhost:8080 when running"
+        print_status "eBAF background service successfully enabled!"
+        print_info "eBAF will now run continuously in the background"
+        print_info "Web dashboard will be available at: http://localhost:8080"
     else
-        print_error "Failed to start Spotify integration service"
+        print_error "Failed to start eBAF service"
         print_info "Check logs with: sudo journalctl -u ebaf.service"
     fi
 }
@@ -480,16 +475,16 @@ print_info "Building and installing eBAF components..."
 # Simple make install with progress
 make install >/dev/null 2>&1 &
 install_pid=$!
-show_real_progress $install_pid "Building and installing eBAF (grab a coffee and relax ☕)"
+show_real_progress $install_pid "Building and installing eBAF"
 wait $install_pid
 
-# Ask user about Spotify integration
-ENABLE_SPOTIFY_INTEGRATION=false
-if ask_spotify_integration; then
-    ENABLE_SPOTIFY_INTEGRATION=true
-    setup_spotify_integration
+# Ask user about Background Service
+ENABLE_SERVICE_INTEGRATION=false
+if ask_service_integration; then
+    ENABLE_SERVICE_INTEGRATION=true
+    setup_service_integration
 else
-    print_info "Skipping Spotify integration setup."
+    print_info "Skipping background service setup."
     print_info "You can manually enable it later by re-running the installer."
 fi
 
@@ -516,15 +511,14 @@ printf "${GREEN}  ✓ ${NC}Manual run: sudo ebaf -d -D\n"
 printf "${GREEN}  ✓ ${NC}Run on all interfaces: sudo ebaf -a -D\n"
 printf "${GREEN}  ✓ ${NC}Web dashboard: http://localhost:8080\n\n"
 
-if [ "$ENABLE_SPOTIFY_INTEGRATION" = true ]; then
-    printf "${BLUE}${BOLD}SPOTIFY INTEGRATION:${NC}\n"
-    printf "${GREEN}  ✓ ${NC}Automatic start/stop with Spotify\n"
+if [ "$ENABLE_SERVICE_INTEGRATION" = true ]; then
+    printf "${BLUE}${BOLD}BACKGROUND SERVICE:${NC}\n"
+    printf "${GREEN}  ✓ ${NC}eBAF is running in the background\n"
     printf "${GREEN}  ✓ ${NC}Web dashboard available at http://localhost:8080\n"
-    printf "${GREEN}  ✓ ${NC}Service enabled for current user\n"
-    printf "${GREEN}  ✓ ${NC}Check service status: systemctl --user status ebaf-spotify.service and ebaf.service\n\n"
+    printf "${GREEN}  ✓ ${NC}Check service status: systemctl status ebaf.service\n\n"
 else
-    printf "${BLUE}${BOLD}SPOTIFY INTEGRATION:${NC}\n"
-    printf "${YELLOW}  ! ${NC}Not enabled - you can re-run installer to enable it\n\n"
+    printf "${BLUE}${BOLD}BACKGROUND SERVICE:${NC}\n"
+    printf "${YELLOW}  ! ${NC}Not enabled - you can run eBAF manually or re-run installer\n\n"
 fi
 
 printf "${BLUE}${BOLD}CONFIGURATION:${NC}\n"

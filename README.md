@@ -74,7 +74,7 @@ git --version
 curl --version
 ```
 ### Install
-#### Enable Spotify integration (Recommended)
+#### Enable Always-On Background Service (Recommended)
 ```bash
 EBAF_ENABLE_SPOTIFY=yes curl -sSL https://github.com/Kazedaa/eBAF/raw/main/install.sh | sudo -E bash
 ```
