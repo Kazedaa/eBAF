@@ -123,17 +123,6 @@ ask_spotify_integration() {
     printf "  • Enable web dashboard at http://localhost:8080\n"
     printf "  • Wait for eBAF to initialize before Spotify starts\n\n"
 
-    local admin_group
-    if admin_group=$(detect_admin_group 2>/dev/null); then
-        printf "${GREEN}${BOLD}✓${NC} User is in admin group: ${WHITE}$admin_group${NC}\n"
-    else
-        printf "${RED}${BOLD}✗${NC} User not in admin group. Required groups by distribution:\n"
-        printf "  • Ubuntu/Debian: ${WHITE}sudo${NC}\n"
-        printf "  • Arch: ${WHITE}wheel${NC}\n"  
-        printf "  • RHEL/CentOS/Fedora: ${WHITE}wheel${NC}\n\n"
-        printf "${YELLOW}Please add user to appropriate group and re-run installer.${NC}\n\n"
-    fi
-
     printf "${YELLOW}${BOLD}Note:${NC} This will install a background system service to monitor for Spotify.\n\n"
     
     # Check for environment variable override
