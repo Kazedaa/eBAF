@@ -167,22 +167,20 @@ setup_spotify_integration() {
     
     # Install the systemd services
     print_info "Creating systemd service..."
-    sudo cp "$SCRIPT_DIR/src/systemd/ebaf-spotify.service" /etc/systemd/system/ebaf-spotify.service
     sudo cp "$SCRIPT_DIR/src/systemd/ebaf.service" /etc/systemd/system/ebaf.service
 
     # 4. Enable and start the system service
     print_info "Enabling and starting service..."
     sudo systemctl daemon-reload
-    sudo systemctl enable ebaf-spotify.service
-    sudo systemctl disable ebaf.service 2>/dev/null || true
+    sudo systemctl disable ebaf.service
     
-    if sudo systemctl start ebaf-spotify.service && sudo systemctl start ebaf.service; then
+    if sudo systemctl start ebaf.service; then
         print_status "Spotify integration successfully enabled!"
         print_info "eBAF will now automatically start when Spotify is opened"
         print_info "Web dashboard will be available at: http://localhost:8080 when running"
     else
         print_error "Failed to start Spotify integration service"
-        print_info "Check logs with: sudo journalctl -u ebaf-spotify.service and sudo journalctl -u ebaf.service"
+        print_info "Check logs with: sudo journalctl -u ebaf.service"
     fi
 }
 
