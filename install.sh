@@ -170,12 +170,6 @@ setup_spotify_integration() {
     sudo cp "$SCRIPT_DIR/src/systemd/ebaf-spotify.service" /etc/systemd/system/ebaf-spotify.service
     sudo cp "$SCRIPT_DIR/src/systemd/ebaf.service" /etc/systemd/system/ebaf.service
 
-    # Clean up any old sudoers files from previous insecure installations
-    if [ -f "/etc/sudoers.d/ebaf-spotify" ]; then
-        print_info "Cleaning up old insecure sudoers configuration..."
-        sudo rm -f /etc/sudoers.d/ebaf-spotify
-    fi
-
     # 4. Enable and start the system service
     print_info "Enabling and starting service..."
     sudo systemctl daemon-reload
