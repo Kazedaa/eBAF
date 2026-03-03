@@ -43,7 +43,7 @@ print_info() { printf "${CYAN}  ➤ ${NC}$1\n"; }
 remove_spotify_integration() {
     print_section "REMOVING SPOTIFY INTEGRATION"
     
-    if [ ! -f "/etc/systemd/system/ebaf-spotify.service" ] && [ ! -f "/usr/local/bin/ebaf-spotify-monitor" ]; then
+    if [ ! -f "/etc/systemd/system/ebaf-spotify.service" ] && [ ! -f "/usr/local/bin/ebaf-spotify-monitor" ] && [ ! -f "/etc/systemd/system/ebaf.service" ]; then
         print_info "Spotify integration was not installed, skipping removal."
         return 0
     fi
@@ -54,10 +54,13 @@ remove_spotify_integration() {
     print_info "Stopping Spotify integration service..."
     sudo systemctl stop ebaf-spotify.service 2>/dev/null || true
     sudo systemctl disable ebaf-spotify.service 2>/dev/null || true
+    sudo systemctl stop ebaf.service 2>/dev/null || true
+    sudo systemctl disable ebaf.service 2>/dev/null || true
     
     print_info "Removing service files..."
     sudo rm -f /etc/systemd/system/ebaf-spotify.service
     sudo rm -f /usr/local/bin/ebaf-spotify-monitor
+    sudo rm -f /etc/systemd/system/ebaf.service
     
     # Remove old legacy sudoers file just in case it exists
     sudo rm -f /etc/sudoers.d/ebaf-spotify 2>/dev/null || true

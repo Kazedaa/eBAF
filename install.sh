@@ -165,10 +165,11 @@ setup_spotify_integration() {
     sudo cp "$SCRIPT_DIR/src/scripts/ebaf-spotify-monitor.sh" /usr/local/bin/ebaf-spotify-monitor
     sudo chmod +x /usr/local/bin/ebaf-spotify-monitor
     
-    # Install the systemd service
+    # Install the systemd services
     print_info "Creating systemd service..."
     sudo cp "$SCRIPT_DIR/src/systemd/ebaf-spotify.service" /etc/systemd/system/ebaf-spotify.service
-    
+    sudo cp "$SCRIPT_DIR/src/systemd/ebaf.service" /etc/systemd/system/ebaf.service
+
     # Clean up any old sudoers files from previous insecure installations
     if [ -f "/etc/sudoers.d/ebaf-spotify" ]; then
         print_info "Cleaning up old insecure sudoers configuration..."
@@ -179,14 +180,15 @@ setup_spotify_integration() {
     print_info "Enabling and starting service..."
     sudo systemctl daemon-reload
     sudo systemctl enable ebaf-spotify.service
+    sudo systemctl enable ebaf.service
     
-    if sudo systemctl start ebaf-spotify.service; then
+    if sudo systemctl start ebaf-spotify.service && sudo systemctl start ebaf.service; then
         print_status "Spotify integration successfully enabled!"
         print_info "eBAF will now automatically start when Spotify is opened"
         print_info "Web dashboard will be available at: http://localhost:8080 when running"
     else
         print_error "Failed to start Spotify integration service"
-        print_info "Check logs with: sudo journalctl -u ebaf-spotify.service"
+        print_info "Check logs with: sudo journalctl -u ebaf-spotify.service and sudo journalctl -u ebaf.service"
     fi
 }
 
@@ -527,7 +529,7 @@ if [ "$ENABLE_SPOTIFY_INTEGRATION" = true ]; then
     printf "${GREEN}  ✓ ${NC}Automatic start/stop with Spotify\n"
     printf "${GREEN}  ✓ ${NC}Web dashboard available at http://localhost:8080\n"
     printf "${GREEN}  ✓ ${NC}Service enabled for current user\n"
-    printf "${GREEN}  ✓ ${NC}Check service status: systemctl --user status ebaf-spotify.service\n\n"
+    printf "${GREEN}  ✓ ${NC}Check service status: systemctl --user status ebaf-spotify.service and ebaf.service\n\n"
 else
     printf "${BLUE}${BOLD}SPOTIFY INTEGRATION:${NC}\n"
     printf "${YELLOW}  ! ${NC}Not enabled - you can re-run installer to enable it\n\n"
