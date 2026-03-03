@@ -13,7 +13,7 @@ OBJ_DIR = obj
 BIN_DIR = bin
 
 TARGET = $(BIN_DIR)/adblocker
-SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/resolver.c
+SOURCES = $(SRC_DIR)/adblocker.c $(SRC_DIR)/resolver.c
 
 INSTALL_BIN = /usr/local/bin
 INSTALL_SHARE = /usr/local/share/ebaf
@@ -27,11 +27,12 @@ ifeq ($(LIBBPF_HEADERS),)
   LIBBPF_HEADERS := /usr/local/include
 endif
 
-# Set linker flags for libbpf
+# Set linker flags for libbpf and add pthread for IPv6 threaded resolver
 LDFLAGS := $(shell pkg-config --libs libbpf)
 ifeq ($(LDFLAGS),)
   LDFLAGS := -l:libbpf.a -lelf -lz
 endif
+LDFLAGS += -lpthread
 
 OBJECTS = $(OBJ_DIR)/adblocker.bpf.o
 
@@ -53,32 +54,22 @@ NC = \033[0m
 # BUILD TARGETS
 # =============================================================================
 
-all: directories $(TARGET) ebaf ebaf-dash
+all: directories $(OBJECTS) $(TARGET) ebaf ebaf-dash
+
 directories:
 	@printf "$(CYAN)Creating build directories...$(NC)\n"
 	@mkdir -p $(OBJ_DIR)
 	@mkdir -p $(BIN_DIR)
 	@printf "$(GREEN)  ✓ Build directories created$(NC)\n"
 
-# Generate the IP blacklist C file and header from the specified blacklist file
-$(SRC_DIR)/ip_blacklist.c $(SRC_DIR)/ip_blacklist.h: $(SRC_DIR)/generate_headers.py $(BLACKLIST)
-	@printf "$(BLUE)Generating IP blacklist from $(BLACKLIST)...$(NC)\n"
-	@if [ -f "$(WHITELIST)" ]; then \
-		printf "$(CYAN)  ➤ Using whitelist: $(WHITELIST)$(NC)\n"; \
-		python3 $(SRC_DIR)/generate_headers.py $(BLACKLIST) $(SRC_DIR)/ip_blacklist.c $(WHITELIST); \
-	else \
-		printf "$(YELLOW)  ⚠ No whitelist file found, proceeding without whitelist$(NC)\n"; \
-		python3 $(SRC_DIR)/generate_headers.py $(BLACKLIST) $(SRC_DIR)/ip_blacklist.c; \
-	fi
-	@printf "$(GREEN)  ✓ IP blacklist generated successfully$(NC)\n"
-
-# Compile eBPF program (depends on the generated header)
-$(OBJ_DIR)/%.bpf.o: $(SRC_DIR)/%.bpf.c $(SRC_DIR)/ip_blacklist.h
+# Compile eBPF program
+$(OBJ_DIR)/%.bpf.o: $(SRC_DIR)/%.bpf.c
 	@printf "$(BLUE)Compiling eBPF program...$(NC)\n"
 	@$(CLANG) $(BPF_CFLAGS) -I$(LIBBPF_HEADERS) -c $< -o $@
 	@printf "$(GREEN)  ✓ eBPF program compiled$(NC)\n"
 
-$(TARGET): $(SOURCES) $(SRC_DIR)/adblocker.h $(OBJECTS) $(SRC_DIR)/ip_blacklist.h
+# Compile main application
+$(TARGET): $(SOURCES) $(SRC_DIR)/adblocker.h $(OBJECTS) $(SRC_DIR)/resolver.h
 	@printf "$(BLUE)Compiling main application...$(NC)\n"
 	@$(CC) $(CFLAGS) -I$(LIBBPF_HEADERS) $(SOURCES) $(LDFLAGS) -o $@
 	@cp $(OBJ_DIR)/adblocker.bpf.o $(BIN_DIR)/
@@ -97,6 +88,7 @@ ebaf: directories
 ebaf-dash: directories
 	@printf "$(BLUE)Preparing dashboard component...$(NC)\n"
 	@cp $(SRC_DIR)/ebaf_dash.py $(BIN_DIR)/
+	@chmod +x $(BIN_DIR)/ebaf_dash.py
 	@printf "$(GREEN)  ✓ Dashboard component ready$(NC)\n"
 
 # =============================================================================
@@ -118,21 +110,23 @@ install: all
 	
 	@printf "$(BLUE)▶ INSTALLING BINARIES$(NC)\n"
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
-	@sudo cp $(BIN_DIR)/adblocker $(INSTALL_BIN)/
-	@printf "$(GREEN)  ✓ adblocker binary installed$(NC)\n"
+	@sudo cp $(BIN_DIR)/adblocker $(INSTALL_BIN)/ebaf-core
+	@sudo chmod +x $(INSTALL_BIN)/ebaf-core
+	@printf "$(GREEN)  ✓ adblocker binary installed as ebaf-core$(NC)\n"
 	@sudo cp $(BIN_DIR)/adblocker.bpf.o $(INSTALL_SHARE)/
 	@printf "$(GREEN)  ✓ eBPF object file installed$(NC)\n"
 	@sudo cp $(BIN_DIR)/ebaf $(INSTALL_BIN)/
+	@sudo chmod +x $(INSTALL_BIN)/ebaf
 	@printf "$(GREEN)  ✓ eBAF launcher installed$(NC)\n\n"
 	
 	@printf "$(BLUE)▶ INSTALLING COMPONENTS$(NC)\n"
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
-	@sudo cp src/ebaf_dash.py $(INSTALL_SHARE)/
-	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_SHARE)/
+	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_BIN)/
+	@sudo chmod +x $(INSTALL_BIN)/ebaf_dash.py
 	@printf "$(GREEN)  ✓ Dashboard components installed$(NC)\n"
-	@sudo cp "$(WHITELIST)" $(INSTALL_SHARE)
+	@sudo cp "$(WHITELIST)" $(INSTALL_SHARE)/ 2>/dev/null || true
 	@printf "$(GREEN)  ✓ Whitelist installed$(NC)\n"
-	@sudo cp "$(BLACKLIST)" $(INSTALL_SHARE)
+	@sudo cp "$(BLACKLIST)" $(INSTALL_SHARE)/ 2>/dev/null || true
 	@printf "$(GREEN)  ✓ Blacklist installed$(NC)\n\n"
 	
 	@printf "$(BLUE)▶ CLEANING BUILD ARTIFACTS$(NC)\n"
@@ -164,23 +158,13 @@ uninstall:
 	
 	@printf "$(BLUE)▶ REMOVING BINARIES$(NC)\n"
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
-	@sudo rm -f $(INSTALL_BIN)/adblocker $(INSTALL_BIN)/ebaf
+	@sudo rm -f $(INSTALL_BIN)/ebaf-core $(INSTALL_BIN)/ebaf $(INSTALL_BIN)/ebaf_dash.py
 	@printf "$(GREEN)  ✓ eBAF binaries removed$(NC)\n\n"
 	
 	@printf "$(BLUE)▶ REMOVING DATA FILES$(NC)\n"
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
-	@sudo rm -f $(INSTALL_SHARE)/adblocker.bpf.o
-	@sudo rm -f $(INSTALL_SHARE)/ebaf_dash.py
-	@sudo rm -f $(INSTALL_BIN)/ebaf-*
-	@printf "$(GREEN)  ✓ Application data removed$(NC)\n"
-	@sudo rm -rf $(INSTALL_BIN)/$(WHITELIST)
-	@sudo rm -rf $(INSTALL_BIN)/$(BLACKLIST)
-	@printf "$(GREEN)  ✓ Configuration files removed$(NC)\n\n"
-	
-	@printf "$(BLUE)▶ REMOVING DIRECTORIES$(NC)\n"
-	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
 	@sudo rm -rf $(INSTALL_SHARE)
-	@printf "$(GREEN)  ✓ eBAF directories removed$(NC)\n\n"
+	@printf "$(GREEN)  ✓ Application data & Lists removed$(NC)\n\n"
 	
 	@printf "$(BLUE)▶ CLEANING TEMPORARY FILES$(NC)\n"
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
@@ -201,7 +185,6 @@ uninstall:
 clean:
 	@printf "$(BLUE)Cleaning build artifacts...$(NC)\n"
 	@rm -rf $(OBJ_DIR) $(BIN_DIR)
-	@rm -f src/ip_blacklist.c src/ip_blacklist.h
 	@sudo rm -f /tmp/ebaf-* 2>/dev/null || true
 	@printf "$(GREEN)  ✓ Clean complete$(NC)\n"
 
@@ -219,12 +202,10 @@ help:
 	
 	@printf "$(BLUE)$(BOLD)BUILD OPTIONS:$(NC)\n"
 	@printf "$(CYAN)  make                                                        $(NC)Build with default blacklist ($(BLACKLIST)) and whitelist ($(WHITELIST))\n"
-	@printf "$(CYAN)  make BLACKLIST=blacklist.txt WHITELIST=whitelist.txt       $(NC)Build with custom blacklist file\n"
 	@printf "$(CYAN)  make clean                                                  $(NC)Remove all build artifacts\n\n"
 	
 	@printf "$(BLUE)$(BOLD)INSTALLATION:$(NC)\n"
 	@printf "$(CYAN)  make install                                                $(NC)Build and install system-wide, then clean project\n"
-	@printf "$(CYAN)  make install BLACKLIST=blacklist.txt WHITELIST=whitelist.txt $(NC)Build with custom lists, install, then clean\n"
 	@printf "$(CYAN)  make uninstall                                              $(NC)Remove all installed files\n\n"
 	
 	@printf "$(BLUE)$(BOLD)UTILITIES:$(NC)\n"
@@ -246,4 +227,4 @@ find-interface:
 # PHONY TARGETS
 # =============================================================================
 
-.PHONY: all install uninstall clean help find-interface
+.PHONY: all directories install uninstall clean help find-interface

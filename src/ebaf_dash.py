@@ -91,9 +91,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 with open(stats_file, 'r') as f:
                     for line in f:
-                        if line.startswith('total:'):
+                        if line.lower().startswith('total:'):
                             stats['total_packets'] = int(line.split(':')[1].strip())
-                        elif line.startswith('blocked:'):
+                        elif line.lower().startswith('blocked:'):
                             stats['blocked_packets'] = int(line.split(':')[1].strip())
             except:
                 pass

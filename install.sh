@@ -2,7 +2,7 @@
 # install.sh
 set -e
 
-REPO_URL="https://github.com/Kazedaa/eBAF.git"  # Replace with your actual repo URL
+REPO_URL="https://github.com/Kazedaa/eBAF.git"
 TEMP_DIR=""
 
 # Color definitions
