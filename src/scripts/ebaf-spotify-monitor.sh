@@ -39,9 +39,12 @@ start_ebaf() {
 stop_ebaf() {
     if [ -n "$EBAF_PID" ]; then
         log "Stopping eBAF..."
-        kill $EBAF_PID 2>/dev/null
-        pkill -P $EBAF_PID 2>/dev/null
-        pkill -x "ebaf-core" 2>/dev/null  # Only kill the exact C binary!
+        # Send SIGTERM to trigger the cleanup trap in ebaf.sh
+        kill -TERM $EBAF_PID 2>/dev/null
+        
+        # Wait for the graceful shutdown to finish
+        wait $EBAF_PID 2>/dev/null
+        
         EBAF_PID=""
         log "eBAF stopped"
     fi

@@ -174,7 +174,7 @@ setup_spotify_integration() {
     print_info "Enabling and starting service..."
     sudo systemctl daemon-reload
     sudo systemctl enable ebaf-spotify.service
-    sudo systemctl enable ebaf.service
+    sudo systemctl disable ebaf.service 2>/dev/null || true
     
     if sudo systemctl start ebaf-spotify.service && sudo systemctl start ebaf.service; then
         print_status "Spotify integration successfully enabled!"

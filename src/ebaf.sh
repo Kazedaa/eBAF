@@ -122,6 +122,7 @@ done
 # Purpose: Locate the adblocker binary in common installation paths
 find_adblocker() {
     local paths=(
+        "/usr/local/bin/ebaf-core"
         "/usr/local/bin/adblocker"
         "./bin/adblocker"
     )
