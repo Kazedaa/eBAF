@@ -87,7 +87,7 @@ ebaf: directories
 
 ebaf-dash: directories
 	@printf "$(BLUE)Preparing dashboard component...$(NC)\n"
-	@cp $(SRC_DIR)/ebaf_dash.py $(BIN_DIR)/
+	@cp $(SRC_DIR)/ebaf_dash.py $(BIN_DIR)/ebaf_dash.py
 	@chmod +x $(BIN_DIR)/ebaf_dash.py
 	@printf "$(GREEN)  ✓ Dashboard component ready$(NC)\n"
 
@@ -121,7 +121,7 @@ install: all
 	
 	@printf "$(BLUE)▶ INSTALLING COMPONENTS$(NC)\n"
 	@printf "$(BLUE)────────────────────────────────────────────────────────────────────────────────$(NC)\n"
-	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_BIN)/
+	@sudo cp $(BIN_DIR)/ebaf_dash.py $(INSTALL_BIN)/ebaf_dash.py
 	@sudo chmod +x $(INSTALL_BIN)/ebaf_dash.py
 	@printf "$(GREEN)  ✓ Dashboard components installed$(NC)\n"
 	@sudo cp "$(WHITELIST)" $(INSTALL_SHARE)/ 2>/dev/null || true
